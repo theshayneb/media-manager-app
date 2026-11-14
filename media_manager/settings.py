@@ -26,7 +26,6 @@ class MediaSettings:
     movie_folders: list[dict] = field(default_factory=list)  # [{"path", "label", "kind": "movies" | "tv"}]
     last_kind: str = "music"      # photos | music | movies
     last_key: str = ""            # the entry of the Folders list that was open
-    photo_tree: bool = False      # Photo Manager's own folder tree shown
     movie_volume: int = 70
     window_geometry: str = ""
     window_state: str = ""        # where the Folders, Selected and Tags panels are

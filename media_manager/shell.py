@@ -24,7 +24,7 @@ from music_manager.ui.main_window import MainWindow as MusicWindow
 from photo_manager.ui.folders import dropped_files, wants_copy
 from photo_manager.ui.main_window import MainWindow as PhotoWindow
 
-from . import __version__
+from . import __version__, bars
 from .movies.window import KINDS, MoviesWindow
 from .settings import MediaSettings
 
@@ -95,8 +95,13 @@ class MediaWindow(QMainWindow):
         self.music.folders_dock.toggleViewAction().setVisible(False)
         self.photo_tree = next((d for d in self.photos.findChildren(QDockWidget) if d.windowTitle() == "Folders"),
                                None)
-        if self.photo_tree is not None:
-            self.photo_tree.setVisible(media.photo_tree)
+        if self.photo_tree is not None:  # folders are opened from the 📂 folder button instead
+            self.photo_tree.hide()
+            self.photo_tree.toggleViewAction().setVisible(False)
+
+        # The same top-bar layout in every section.
+        self.music_folder = bars.music_bar(self.music, self)
+        self.photo_folder, self.photo_search = bars.photo_bar(self.photos)
 
         # The panels: Folders and Selected (album art + check-up) here, and Music's Tags panel moved out
         # of Music so all three can be dragged by their titles to any edge of the window.
@@ -126,14 +131,19 @@ class MediaWindow(QMainWindow):
 
         self.tags_dock = self.music.editor_dock
         self.music.removeDockWidget(self.tags_dock)
+        self.details_dock = self.photos.details_dock  # Photo Manager's panel, unchanged, now movable here
+        self.photos.removeDockWidget(self.details_dock)
+        self.details_dock.setTitleBarWidget(None)  # a title to drag it by
 
         self.setCentralWidget(self.stack)
         self.setDockOptions(QMainWindow.DockOption.AnimatedDocks | QMainWindow.DockOption.AllowNestedDocks)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.folders_dock)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.selected_dock)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.tags_dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.details_dock)
         self.tags_dock.show()
-        self.resizeDocks([self.folders_dock], [240], Qt.Orientation.Horizontal)
+        self.details_dock.show()
+        self.resizeDocks([self.folders_dock, self.tags_dock], [240, 270], Qt.Orientation.Horizontal)
         if media.window_geometry:
             self.restoreGeometry(QByteArray.fromBase64(media.window_geometry.encode()))
         if media.window_state:
@@ -168,8 +178,8 @@ class MediaWindow(QMainWindow):
     def entries(self) -> dict[str, list[tuple[str, str, str]]]:
         """{kind: [(key, label, tooltip)]}."""
         photos = [("fav:" + f, os.path.basename(os.path.normpath(f)) or f, f) for f in self.photos.settings.favorites]
-        photos.append(("browse", "📂 Browse folders…" if not self.media.photo_tree else "📂 Hide the folder tree",
-                       "Photo Manager's folder tree, to open any folder (right-click one there → Add to Favorites)"))
+        if not photos:
+            photos = [("photo-open", "＋ Open a folder…", "Open a photo folder (📂 in the top bar adds it here)")]
         music = [(d["key"], d["label"], self.music.folder(d["key"])) for d in self.music.view_defs()]
         movies = [("movie:" + f["path"], f"{'📺' if f.get('kind') == 'tv' else '🎞'} {f.get('label') or f['path']}",
                    f"{KINDS.get(f.get('kind', 'movies'))}: {f['path']}") for f in self.media.movie_folders]
@@ -221,12 +231,9 @@ class MediaWindow(QMainWindow):
         kind, key = item.data(KIND_ROLE), str(item.data(KEY_ROLE) or "")
         if not kind:
             return
-        if key == "browse":  # show/hide Photo Manager's folder tree
-            self.media.photo_tree = not self.media.photo_tree
-            if self.photo_tree is not None:
-                self.photo_tree.setVisible(self.media.photo_tree)
+        if key == "photo-open":
             self.show_kind("photos")
-            self.fill()
+            bars._open_photo_folder(self.photos)
             return
         if key == "movie-add":
             self.show_kind("movies")
@@ -257,6 +264,15 @@ class MediaWindow(QMainWindow):
         self.stack.setCurrentWidget(part)
         self.selected_dock.setVisible(kind == "music")
         self.tags_dock.setVisible(kind == "music")
+        self.details_dock.setVisible(kind == "photos")
+        if kind == "photos":
+            QTimer.singleShot(0, self._fit_details)
+
+    def _fit_details(self) -> None:
+        """Photo Manager's panel never narrower than its contents (they'd be cut off)."""
+        need = self.photos.sidebar.minimumSizeHint().width() + 24  # + its scroll bar
+        if self.details_dock.isVisible() and self.details_dock.width() < need:
+            self.resizeDocks([self.details_dock], [need], Qt.Orientation.Horizontal)
 
     def _menu(self, pos) -> None:  # type: ignore[no-untyped-def]
         item = self.list.itemAt(pos)
@@ -275,8 +291,7 @@ class MediaWindow(QMainWindow):
             if key.startswith("fav:"):
                 menu.addAction("Remove from Favorites", lambda: self.photos.toggle_favorite(key[4:]))
                 menu.addSeparator()
-            menu.addAction("Browse folders… (then right-click one → Add to Favorites)",
-                           lambda: self._clicked(self._item("photos", "browse")))
+            menu.addAction("Open a folder…", lambda: bars._open_photo_folder(self.photos))
         elif kind == "movies":
             if key.startswith("movie:"):
                 menu.addAction("Remove from the list", lambda: self.movies.remove_folder(key[6:]))

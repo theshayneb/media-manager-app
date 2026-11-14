@@ -32,7 +32,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from music_manager.ui.editor import ElidedLabel
 from music_manager.ui.model import fmt_time
 from music_manager.ui.workers import Background
 
@@ -225,13 +224,17 @@ class MoviesWindow(QMainWindow):
             bar.addAction(a)
             return a
 
+        from ..bars import GEAR, FolderButton, menu_button
+
         act("▶ Play", self.play_selected, "Return")
-        act("Rename for Plex…", self.rename_plex, None,
+        act("Rename for Plex", self.rename_plex, None,
             "“Title (Year)” for movies, “Show - S01E02 - Title” for episodes")
-        act("Rename…", self.rename_one, "F2", "Rename one video")
-        act("Move to…", self.move_selected, "Ctrl+M")
+        bar.addSeparator()
+        act("Rename", self.rename_one, "F2", "Rename one video")
+        act("Move to", self.move_selected, "Ctrl+M")
         act("🗑 Delete", self.delete_selected, "Delete", "Send to the Recycle Bin (with its subtitles)")
         act("Show in Explorer", self.show_in_explorer, "Ctrl+E")
+        bar.addSeparator()
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search…")
         self.search.setClearButtonEnabled(True)
@@ -241,23 +244,18 @@ class MoviesWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         bar.addWidget(spacer)
-        self.where = ElidedLabel("")  # a long path mustn't push the player off the window
-        self.where.setStyleSheet("color: palette(placeholder-text); padding: 0 6px;")
-        self.where.setMinimumWidth(80)
-        self.where.setMaximumWidth(420)
-        self.where.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.where.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        bar.addWidget(self.where)
-        add = QToolButton()
-        add.setText("📁 Add Folder ▾")
-        add.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
-        add.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self)
-        menu.addAction("Add a Movies folder…", lambda: self.add_folder("movies"))
-        menu.addAction("Add a TV Shows folder…", lambda: self.add_folder("tv"))
-        add.setMenu(menu)
-        bar.addWidget(add)
+        menu.addAction("Add a Movies folder to the Folders list…", lambda: self.add_folder("movies"))
+        menu.addAction("Add a TV Shows folder to the Folders list…", lambda: self.add_folder("tv"))
+        menu.addSeparator()
+        menu.addAction("Show this folder in Explorer", self.show_folder_in_explorer)
+        self.where = FolderButton(menu)
+        bar.addWidget(self.where)
         act("⟳ Refresh", self.reload, "F5")
+        gear_menu = QMenu(self)
+        gear_menu.addAction("Remove this folder from the Folders list",
+                            lambda: self.remove_folder(self.entry.get("path", "")) if self.entry else None)
+        bar.addWidget(menu_button(GEAR, gear_menu, "Folder options"))
 
     # ------------------------------------------------------------ folders
     def add_folder(self, kind: str) -> None:
@@ -279,7 +277,7 @@ class MoviesWindow(QMainWindow):
 
     def open_entry(self, entry: dict) -> None:
         self.entry = entry
-        self.where.setText(entry.get("path", ""))
+        self.where.set_path(entry.get("path", ""))
         self.reload()
 
     def reload(self) -> None:
@@ -435,6 +433,11 @@ class MoviesWindow(QMainWindow):
         self._release(paths)
         self.bg.run(lambda: files.recycle(paths),
                     lambda res, err: self._report("Deleted", len(paths) - len(res or []), res or []))
+
+    def show_folder_in_explorer(self) -> None:
+        folder = self.entry.get("path", "")
+        if folder and os.path.isdir(folder) and sys.platform == "win32":
+            os.startfile(folder)  # type: ignore[attr-defined]
 
     def show_in_explorer(self) -> None:
         paths = self.selected_paths()

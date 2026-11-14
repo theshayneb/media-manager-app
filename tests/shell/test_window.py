@@ -61,12 +61,14 @@ def test_window_lists_every_kind_and_switches(tmp_path):
     win._clicked(win._item("music", "library"))
     assert win.stack.currentWidget() is win.music and win.tags_dock.isVisible() and win.selected_dock.isVisible()
 
-    win._clicked(win._item("photos", "browse"))
-    assert win.stack.currentWidget() is win.photos and win.media.photo_tree
+    assert win._item("photos", "photo-open") is not None  # no photo folders yet
+    win.show_kind("photos")
+    assert win.stack.currentWidget() is win.photos and win.details_dock.isVisible()
+    assert not win.tags_dock.isVisible()
 
     win.close()
     again = MediaSettings.load()
-    assert again.last_kind == "music" and again.last_key == "library" and again.photo_tree
+    assert again.last_kind == "music" and again.last_key == "library"
 
 
 def test_movie_folder_shows_add_entry_when_empty(tmp_path):
@@ -168,3 +170,79 @@ def test_report_qvideowidget_native(capsys):
     with capsys.disabled():
         print("\nQVideoWidget native children:", _native_children(top))
     top.close()
+
+
+def _bar_texts(part):
+    from PySide6.QtWidgets import QToolBar
+
+    bar = next(b for b in part.findChildren(QToolBar) if not b.isHidden())
+    out = []
+    for a in bar.actions():
+        w = bar.widgetForAction(a)
+        out.append("|" if a.isSeparator() else (w.text() if hasattr(w, "text") and w.text() else a.text()))
+    return [t for t in out if t]
+
+
+def test_top_bars_share_one_layout(tmp_path):
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+
+    _music_folders(tmp_path)
+    win = build_window()
+    shared = ["Move to", "Show in Explorer"]
+    for part in (win.music, win.photos, win.movies):
+        texts = _bar_texts(part)
+        assert all(t in texts for t in shared), texts
+        assert any(t.startswith("Rename") for t in texts) and any("Delete" in t for t in texts), texts
+        assert "⟳ Refresh" in texts and texts[-1] == "⚙ ▾", texts
+        assert any(t.startswith("📂") for t in texts), texts
+        assert texts.index("Move to") < texts.index("Show in Explorer") < texts.index("⟳ Refresh")
+    assert win.photos.menuBar().isHidden()
+    assert win._item("photos", "browse") is None
+    win.close()
+
+
+def test_photo_search_filters_by_name(tmp_path):
+    from PIL import Image
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+
+    _music_folders(tmp_path)
+    pics = tmp_path / "pics"
+    pics.mkdir()
+    for name in ("beach.png", "city.png", "beach2.png"):
+        Image.new("RGB", (8, 8)).save(pics / name)
+    win = build_window()
+    win.show()
+    win.show_kind("photos")
+    _wait(lambda: False, 0.5)  # Photo Manager opens its last folder at start-up
+    win.photos.open_folder(str(pics))
+    assert _wait(lambda: len(win.photos.model.all_items) == 3)
+    win.photo_search.setText("beach")
+    assert _wait(lambda: len(win.photos.model.items) == 2)
+    assert win.photos.filter_btn.text() == "Filter"
+    win.photo_search.setText("")
+    assert _wait(lambda: len(win.photos.model.items) == 3)
+    assert win.photo_folder.path == str(pics)
+    win.close()
+
+
+def test_music_move_to(tmp_path):
+    from media_manager import bars
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+
+    _music_folders(tmp_path)
+    song = tmp_path / "Review" / "A - One.mp3"
+    song.write_bytes(b"")
+    (tmp_path / "Review" / "A - One.txt").write_text("la la")
+    win = build_window()
+    win._clicked(win._item("music", "review"))
+    assert _wait(lambda: len(win.music.model.tracks) == 1)
+    win.music.selected_paths = lambda: [str(song)]
+    bars.move_music(win.music, str(tmp_path / "Library"))
+    assert _wait(lambda: (tmp_path / "Library" / "A - One.mp3").exists() and not song.exists())
+    assert (tmp_path / "Library" / "A - One.txt").exists()  # the lyrics file went along
+    win.close()

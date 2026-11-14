@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+- Top bars laid out the same way in every section: the section's own buttons, then Rename · Move to ·
+  Delete · Show in Explorer, then Search; on the right the 📂 folder button, ⟳ Refresh and ⚙ ▾.
+  - Photos: the Tools / View menu row is gone (its menus are under ⚙ ▾ and ▦ View ▾); new Rename button and a
+    search box (by name); the folder button opens, types or adds folders, so "Browse folders…" is gone
+    from the Folders list.
+  - Music: new Move to (with the lyrics .txt); the folder button holds Add Folder and the saved search.
+  - Movies & TV: the folder button holds Add a Movies / TV Shows folder.
+- Tags panel: Rating sits on its own line under the word Rating, so the panel can be about 80 px narrower.
+- Photos' side panel (Preview, Labels, Keywords, Date taken, Rename) can be dragged to any edge like the others.
+  It looks the same; it never opens narrower than its contents.
+
 ## 0.1.1
 
 - Fixed: clicks were ignored all over the window (songs couldn't be picked one after another, photo group

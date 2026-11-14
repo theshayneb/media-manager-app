@@ -54,6 +54,8 @@ class RatingStars(QWidget):
         self.mixed = False
         self.buttons: list[QToolButton] = []
         for n in range(1, 6):
+            if n > 1:
+                layout.addStretch(1)  # spread across the panel's width, under the word Rating
             b = QToolButton(text=stars(n))
             b.setAutoRaise(True)
             b.setCheckable(True)
@@ -65,7 +67,6 @@ class RatingStars(QWidget):
             self.buttons.append(b)
         self.note = QLabel("")
         layout.addWidget(self.note)
-        layout.addStretch(1)
 
     def _click(self, n: int) -> None:
         self.set_value(0 if (n == self.value and not self.mixed) else n)
@@ -313,7 +314,8 @@ class TagEditor(QWidget):
         discs.setColumnStretch(3, 1)
         form.addRow("Disc #", discs)
         self.rating = RatingStars()
-        form.addRow("Rating", self.rating)
+        form.addRow(QLabel("Rating"))  # on its own line, so the panel can be narrow
+        form.addRow(self.rating)
         self.tag_tabs.addTab(standard, "Standard")
         chips_box = QWidget()
         self.chips = FlowLayout(chips_box, spacing=6)

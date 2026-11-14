@@ -9,7 +9,8 @@ One Windows app for all your media: reviewing, tagging, renaming, moving and pla
   delete them (to the Recycle Bin) and show them in Explorer. Subtitles (`.srt`) and `.nfo` files go with their video.
 
 The Folders list on the left holds all three kinds; the rest of the window follows what you pick.
-The Folders, Selected and Tags panels can be dragged by their titles to any edge of the window.
+The Folders, Selected, Tags and Photos' Details panels can be dragged by their titles to any edge of the window,
+and every section's top bar is laid out the same way (see `media_manager/bars.py`).
 
 ## Download
 
