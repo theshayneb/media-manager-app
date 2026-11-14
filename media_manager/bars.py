@@ -29,7 +29,31 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-GEAR = "⚙ ▾"
+GEAR = "⚙"
+# The user's "Option C": the buttons every section shares are small icons (their names show on hover);
+# each section's own buttons are words without icons.
+ICONS = {"Rename": "✏️", "Move to": "➡️", "Delete": "🗑", "Show in Explorer": "📁", "Refresh": "⟳", "Settings": "⚙"}
+
+
+def label_as(item, name: str, icon: str | None = None) -> None:  # type: ignore[no-untyped-def]
+    """Show a toolbar action/button as icon (or plain name), keeping its menu text and a tooltip that names it.
+    For an action only its icon text changes, so menus using the same action still show its full name."""
+    shown = icon or name
+    tip = item.toolTip() or ""
+    if not tip.casefold().startswith(name.casefold()):
+        tip = f"{name}: {tip}" if tip and tip != item.text() else name
+    if isinstance(item, QAction):
+        item.setIconText(shown)
+    else:
+        item.setText(shown)
+    item.setToolTip(tip)
+
+
+def shared_icons(rename, move, delete, explorer, refresh) -> None:  # type: ignore[no-untyped-def]
+    for item, name in ((rename, "Rename"), (move, "Move to"), (delete, "Delete"), (explorer, "Show in Explorer"),
+                       (refresh, "Refresh")):
+        if item is not None:
+            label_as(item, name, ICONS[name])
 
 
 class FolderButton(QToolButton):
@@ -142,6 +166,13 @@ def music_bar(music, shell) -> FolderButton:  # type: ignore[no-untyped-def]
         gear_menu.addAction(settings)
     gear = menu_button(GEAR, gear_menu, "Settings")
 
+    label_as(music.keep_action, "Keep")
+    label_as(music.convert_action, "Convert")
+    shared_icons(rename, move_btn, music.delete_action, explorer, refresh)
+    layout_set_text = music.layout_btn.setText
+    music.layout_btn.setText = lambda text: layout_set_text(text.lstrip("▦☰ "))  # words only
+    music.layout_btn.setText(music.layout_btn.text())
+
     music.search.setMaximumWidth(220)
     music.show_filter.setMaximumWidth(170)
     show_label = next((bar.widgetForAction(a) for a in bar.actions()
@@ -239,7 +270,9 @@ def photo_bar(photos) -> tuple[FolderButton, QLineEdit]:  # type: ignore[no-unty
     photos.menuBar().hide()
     view_btn = menu_button("▦ View ▾", menus["View"], "Thumbnails, grouping, panels and theme") \
         if "View" in menus else None
-    gear = menu_button(GEAR, menus["Tools"], "Steam and video imports") if "Tools" in menus else None
+    gear = menu_button(GEAR, menus["Tools"], "Settings: Steam and video imports") if "Tools" in menus else None
+    if view_btn is not None:
+        view_btn.setText("View ▾")
 
     folder_menu = QMenu(photos)
     folder_menu.aboutToShow.connect(lambda: _fill_photo_folder_menu(photos, folder_menu, up))
@@ -254,6 +287,7 @@ def photo_bar(photos) -> tuple[FolderButton, QLineEdit]:  # type: ignore[no-unty
     search.setMinimumWidth(120)
     _add_photo_search(photos, search)
 
+    shared_icons(rename, texts.get("Move to"), texts.get("Delete"), texts.get("Show in Explorer"), refresh)
     items = [texts.get("View"), texts.get("Convert"), texts.get("Open"), "|",
              rename, texts.get("Move to"), texts.get("Delete"), texts.get("Show in Explorer"), "|",
              search, label("Sort:"), photos.sort_combo, label("Group:"), photos.group_combo, photos.filter_btn,

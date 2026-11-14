@@ -224,16 +224,16 @@ class MoviesWindow(QMainWindow):
             bar.addAction(a)
             return a
 
-        from ..bars import GEAR, FolderButton, menu_button
+        from ..bars import GEAR, FolderButton, label_as, menu_button, shared_icons
 
-        act("▶ Play", self.play_selected, "Return")
+        play = act("Play", self.play_selected, "Return")
         act("Rename for Plex", self.rename_plex, None,
             "“Title (Year)” for movies, “Show - S01E02 - Title” for episodes")
         bar.addSeparator()
-        act("Rename", self.rename_one, "F2", "Rename one video")
-        act("Move to", self.move_selected, "Ctrl+M")
-        act("🗑 Delete", self.delete_selected, "Delete", "Send to the Recycle Bin (with its subtitles)")
-        act("Show in Explorer", self.show_in_explorer, "Ctrl+E")
+        rename = act("Rename", self.rename_one, "F2", "Rename one video")
+        move = act("Move to", self.move_selected, "Ctrl+M")
+        delete = act("Delete", self.delete_selected, "Delete", "Send to the Recycle Bin (with its subtitles)")
+        explorer = act("Show in Explorer", self.show_in_explorer, "Ctrl+E")
         bar.addSeparator()
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search…")
@@ -251,11 +251,13 @@ class MoviesWindow(QMainWindow):
         menu.addAction("Show this folder in Explorer", self.show_folder_in_explorer)
         self.where = FolderButton(menu)
         bar.addWidget(self.where)
-        act("⟳ Refresh", self.reload, "F5")
+        refresh = act("Refresh", self.reload, "F5")
+        shared_icons(rename, move, delete, explorer, refresh)
+        label_as(play, "Play")
         gear_menu = QMenu(self)
         gear_menu.addAction("Remove this folder from the Folders list",
                             lambda: self.remove_folder(self.entry.get("path", "")) if self.entry else None)
-        bar.addWidget(menu_button(GEAR, gear_menu, "Folder options"))
+        bar.addWidget(menu_button(GEAR, gear_menu, "Settings: folder options"))
 
     # ------------------------------------------------------------ folders
     def add_folder(self, kind: str) -> None:

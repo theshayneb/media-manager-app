@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+- Top-bar icons follow one rule in every section: the shared buttons are small icons (✏️ Rename, ➡️ Move to,
+  🗑 Delete, 📁 Show in Explorer, ⟳ Refresh, ⚙ Settings; point at one to see its name), and each section's
+  own buttons are words without icons (Keep, Convert, Play, Song list ▾, View ▾…).
+- Music's "Convert to MP3" button now says "Convert". Right-click menus keep the full names.
+
 ## 0.2.1
 
 - Fixed: Photos' keyword chips and label buttons were giant again (and the panel cut off). Moving the panel

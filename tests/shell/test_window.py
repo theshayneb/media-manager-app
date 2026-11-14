@@ -185,19 +185,32 @@ def _bar_texts(part):
 
 
 def test_top_bars_share_one_layout(tmp_path):
+    """Option A order, Option C icons: shared buttons are icons (named on hover), the rest are words."""
+    from PySide6.QtWidgets import QToolBar
+
     QApplication.instance() or QApplication([])
     from media_manager.app import build_window
 
     _music_folders(tmp_path)
     win = build_window()
-    shared = ["Move to", "Show in Explorer"]
+    names = {"✏️": "Rename", "➡️": "Move to", "🗑": "Delete", "📁": "Show in Explorer", "⟳": "Refresh"}
     for part in (win.music, win.photos, win.movies):
         texts = _bar_texts(part)
-        assert all(t in texts for t in shared), texts
-        assert any(t.startswith("Rename") for t in texts) and any("Delete" in t for t in texts), texts
-        assert "⟳ Refresh" in texts and texts[-1] == "⚙ ▾", texts
-        assert any(t.startswith("📂") for t in texts), texts
-        assert texts.index("Move to") < texts.index("Show in Explorer") < texts.index("⟳ Refresh")
+        shared = [t for t in texts if t in names]
+        assert shared == list(names), texts
+        assert texts[-1] == "⚙" and any(t.startswith("📂") for t in texts), texts
+        bar = next(b for b in part.findChildren(QToolBar) if not b.isHidden())
+        for a in bar.actions():
+            w = bar.widgetForAction(a)
+            if w is not None and hasattr(w, "text") and w.text() in names:
+                assert w.toolTip().startswith(names[w.text()]), (w.text(), w.toolTip())
+        # no icons in front of words (Keep, Play, Convert…)
+        assert not any(t[0] in "✔▶🗑▦☰" and len(t) > 2 for t in texts), texts
+    music = _bar_texts(win.music)
+    assert "Convert" in music and "Keep" in music and "Convert to MP3" not in music
+    assert music.index("Keep") < music.index("✏️") < music.index("📁") < music.index("⟳")
+    assert "Play" in _bar_texts(win.movies)
+    assert win.music.delete_action.text() == "🗑 Delete"  # menus keep the full name
     assert win.photos.menuBar().isHidden()
     assert win._item("photos", "browse") is None
     win.close()
