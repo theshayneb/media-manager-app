@@ -134,6 +134,9 @@ class MediaWindow(QMainWindow):
         self.details_dock = self.photos.details_dock  # Photo Manager's panel, unchanged, now movable here
         self.photos.removeDockWidget(self.details_dock)
         self.details_dock.setTitleBarWidget(None)  # a title to drag it by
+        # Photo Manager styles its chips and label buttons on its window; the panel keeps those styles here.
+        self.details_dock.setStyleSheet(self.photos.styleSheet())
+        self._remember_collapsed()
 
         self.setCentralWidget(self.stack)
         self.setDockOptions(QMainWindow.DockOption.AnimatedDocks | QMainWindow.DockOption.AllowNestedDocks)
@@ -261,12 +264,66 @@ class MediaWindow(QMainWindow):
             self.movies.stop()
         self.kind = kind
         part = {"photos": self.photos, "music": self.music, "movies": self.movies}[kind]
+        self._remember_widths()
         self.stack.setCurrentWidget(part)
         self.selected_dock.setVisible(kind == "music")
         self.tags_dock.setVisible(kind == "music")
         self.details_dock.setVisible(kind == "photos")
-        if kind == "photos":
-            QTimer.singleShot(0, self._fit_details)
+        QTimer.singleShot(0, self._restore_widths)
+
+    # ------------------------------------------------------------ panel widths
+    def _docks(self) -> list[QDockWidget]:
+        return [self.folders_dock, self.selected_dock, self.tags_dock, self.details_dock]
+
+    def _side(self, dock: QDockWidget) -> bool:
+        return self.dockWidgetArea(dock) in (Qt.DockWidgetArea.LeftDockWidgetArea,
+                                             Qt.DockWidgetArea.RightDockWidgetArea)
+
+    def _remember_widths(self) -> None:
+        """Showing or hiding a panel makes Qt re-size the others; note each one's size to put it back."""
+        for d in self._docks():
+            if d.isVisible():
+                self.media.dock_sizes[d.objectName()] = d.width() if self._side(d) else d.height()
+
+    def _restore_widths(self) -> None:
+        shown = [d for d in self._docks() if d.isVisible() and d.objectName() in self.media.dock_sizes]
+        for orientation, docks in ((Qt.Orientation.Horizontal, [d for d in shown if self._side(d)]),
+                                   (Qt.Orientation.Vertical, [d for d in shown if not self._side(d)])):
+            if docks:
+                self.resizeDocks(docks, [self.media.dock_sizes[d.objectName()] for d in docks], orientation)
+        self._fit_details()
+
+    # ------------------------------------------------------------ photo groups
+    def _remember_collapsed(self) -> None:
+        """Collapsed photo groups are remembered for each folder and grouping (also after a restart)."""
+        photos, model = self.photos, self.photos.model
+        saved = self.media.photo_collapsed  # {"<folder>|<group by>": [titles]}
+
+        def key(folder: str, group: str) -> str:
+            return f"{os.path.normcase(os.path.normpath(folder))}|{group}"
+
+        set_collapsed, load_folder, set_group = model.set_collapsed, model.load_folder, photos.set_group
+
+        def set_collapsed_saved(title: str, collapsed: bool) -> None:
+            set_collapsed(title, collapsed)
+            if model.folder:
+                k = key(model.folder, model.group_by)
+                if model.collapsed:
+                    saved[k] = sorted(model.collapsed)
+                else:
+                    saved.pop(k, None)
+
+        def load_folder_saved(folder: str) -> None:
+            model.collapsed = set(saved.get(key(folder, model.group_by), []))
+            load_folder(folder)
+
+        def set_group_saved(group: str) -> None:
+            if model.folder:
+                model.collapsed = set(saved.get(key(model.folder, group), []))
+            set_group(group)
+
+        model.set_collapsed, model.load_folder, photos.set_group = set_collapsed_saved, load_folder_saved, \
+            set_group_saved
 
     def _fit_details(self) -> None:
         """Photo Manager's panel never narrower than its contents (they'd be cut off)."""
@@ -305,6 +362,7 @@ class MediaWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         self.media.window_geometry = bytes(self.saveGeometry().toBase64()).decode()
         self.media.window_state = bytes(self.saveState().toBase64()).decode()
+        self._remember_widths()
         for part in (self.movies, self.music, self.photos):
             part.close()  # each saves its own settings and stops its work
         try:

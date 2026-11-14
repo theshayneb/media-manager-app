@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+- Fixed: Photos' keyword chips and label buttons were giant again (and the panel cut off). Moving the panel
+  out of Photo Manager's window had lost Photo Manager's own button styles; the panel keeps them now.
+- Fixed: panels jumped to a very wide size when switching between sections. Each panel's size is
+  remembered and put back.
+- Collapsed photo groups are remembered for each folder and grouping, also after closing the app.
+
 ## 0.2.0
 
 - Top bars laid out the same way in every section: the section's own buttons, then Rename · Move to ·

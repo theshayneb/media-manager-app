@@ -1,5 +1,6 @@
 import time
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from media_manager.settings import MediaSettings
@@ -246,3 +247,74 @@ def test_music_move_to(tmp_path):
     assert _wait(lambda: (tmp_path / "Library" / "A - One.mp3").exists() and not song.exists())
     assert (tmp_path / "Library" / "A - One.txt").exists()  # the lyrics file went along
     win.close()
+
+
+def test_photo_panel_keeps_photo_manager_styles_and_size(tmp_path):
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from photo_manager.core.settings import Settings as PhotoSettings
+    from photo_manager.ui.main_window import STYLE
+
+    _music_folders(tmp_path)
+    alone = __import__("photo_manager.ui.main_window", fromlist=["MainWindow"]).MainWindow(PhotoSettings.load(), None)
+    alone_width = alone.sidebar.minimumSizeHint().width()
+    alone.close()
+    win = build_window()
+    assert STYLE.strip() in win.details_dock.styleSheet()
+    # The chips and label buttons are as small as in Photo Manager on its own.
+    assert win.photos.sidebar.minimumSizeHint().width() <= alone_width + 2
+    win.close()
+
+
+def test_panel_widths_survive_switching_sections(tmp_path):
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+
+    _music_folders(tmp_path)
+    win = build_window()
+    win.resize(1600, 900)
+    win.show()
+    win.show_kind("music")
+    _wait(lambda: False, 0.5)
+    win.resizeDocks([win.folders_dock, win.tags_dock], [205, 250], Qt.Orientation.Horizontal)
+    _wait(lambda: False, 0.3)
+    folders, tags = win.folders_dock.width(), win.tags_dock.width()
+    win.show_kind("photos")
+    _wait(lambda: False, 0.5)
+    win.show_kind("movies")
+    _wait(lambda: False, 0.5)
+    win.show_kind("music")
+    _wait(lambda: False, 0.5)
+    assert abs(win.folders_dock.width() - folders) <= 3 and abs(win.tags_dock.width() - tags) <= 3
+    win.close()
+
+
+def test_collapsed_photo_groups_are_remembered(tmp_path):
+    from PIL import Image
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+
+    _music_folders(tmp_path)
+    a, b = tmp_path / "a", tmp_path / "b"
+    for folder in (a, b):
+        folder.mkdir()
+        for name in ("one.png", "two.jpg"):
+            Image.new("RGB", (8, 8)).save(folder / name)
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.5)
+    photos = win.photos
+    photos.set_group("type")
+    photos.open_folder(str(a))
+    titles = photos.model.group_titles()
+    assert len(titles) == 2
+    photos.grid.toggle_group(titles[0])
+    assert photos.model.collapsed == {titles[0]}
+    photos.open_folder(str(b))
+    assert photos.model.collapsed == set()  # another folder: its own groups
+    photos.open_folder(str(a))
+    assert photos.model.collapsed == {titles[0]}
+    win.close()
+    again = MediaSettings.load()
+    assert list(again.photo_collapsed.values()) == [[titles[0]]]

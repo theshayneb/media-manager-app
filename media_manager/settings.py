@@ -28,6 +28,8 @@ class MediaSettings:
     last_key: str = ""            # the entry of the Folders list that was open
     movie_volume: int = 70
     window_geometry: str = ""
+    dock_sizes: dict = field(default_factory=dict)        # panel name -> its width (or height)
+    photo_collapsed: dict = field(default_factory=dict)   # "<folder>|<group by>" -> collapsed group titles
     window_state: str = ""        # where the Folders, Selected and Tags panels are
 
     path: Path = field(default_factory=lambda: config_dir() / "settings.json", repr=False)
