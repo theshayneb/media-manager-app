@@ -331,3 +331,29 @@ def test_collapsed_photo_groups_are_remembered(tmp_path):
     win.close()
     again = MediaSettings.load()
     assert list(again.photo_collapsed.values()) == [[titles[0]]]
+
+
+def test_timelines_scrub(tmp_path):
+    """A click anywhere on a timeline jumps there (and dragging follows the mouse)."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QStyle
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from photo_manager.ui.video import VideoView
+
+    _music_folders(tmp_path)
+    win = build_window()
+    win.show()
+    sliders = [win.music.player.slider, win.movies.slider] + [v.slider for v in win.photos.findChildren(VideoView)]
+    assert len(sliders) >= 3
+    for slider in sliders:
+        hint = slider.style().styleHint(QStyle.StyleHint.SH_Slider_AbsoluteSetButtons)
+        assert hint == Qt.MouseButton.LeftButton.value
+        slider.setRange(0, 100000)
+        slider.setValue(0)
+        slider.resize(400, 20)
+        QTest.mouseClick(slider, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(300, 10))
+        assert slider.value() > 50000, slider.value()
+    win.close()

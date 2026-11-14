@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Scrubbing: every playback timeline (Music, Photos videos, Movies & TV) jumps to where you click and
+  follows the mouse while you drag, playing from there (Music used to jump only when you let go).
+- Music: new "Obsidian notes" box on the Tags panel's Extra tab (free text, several lines). Saved in the file
+  as TXXX:Obsidian Notes (MP3) / OBSIDIAN NOTES (FLAC), one value with its line breaks; also in the Keep review.
+  For the Obsidian Media Manager plugin to add to a note's Notes property.
+
 ## 0.2.2
 
 - Top-bar icons follow one rule in every section: the shared buttons are small icons (✏️ Rename, ➡️ Move to,

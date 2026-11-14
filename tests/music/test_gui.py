@@ -403,3 +403,37 @@ def test_keep_window_has_names_and_replace_and_extra_tags(app, song, tmp_path):
     assert review.overwrite and review.rows[0][1].endswith("Adele - Hello.mp3")
     review.pattern.setCurrentText("{title}")
     assert review.rows[0][1].endswith("Hello.mp3") and "Adele" not in review.rows[0][1].rsplit("/", 1)[-1]
+
+
+def test_obsidian_notes(app, song):
+    from mutagen.flac import FLAC
+    from mutagen.id3 import ID3
+
+    from music_manager.ui.editor import TagEditor
+    from music_manager.ui.review import value_of
+
+    notes = "Saw her live in 2019.\nThe bridge still gets me."
+    for name in ("x.mp3", "y.flac"):
+        path = song(name)
+        tags.write(str(path), {"obsidian_notes": notes, "obsidian_tags": "live"})
+        d = tags.read(str(path), with_details=True)
+        assert d.track.obsidian_notes == notes
+        assert d.track.obsidian_tags == "live"
+        assert all("obsidian" not in key.casefold() for key, _n, _v in d.frames)  # not under "Other"
+        if name.endswith(".mp3"):
+            assert ID3(str(path))["TXXX:Obsidian Notes"].text == [notes]  # one value, lines kept
+        else:
+            assert FLAC(str(path))["obsidian notes"] == [notes]
+
+        editor = TagEditor()
+        editor.show_tracks([d.track], d)
+        box = editor.edits["obsidian_notes"]
+        assert box.text() == notes and not editor.changed
+        box.setPlainText(notes + "\nMore.")  # typed
+        assert editor.changed["obsidian_notes"] == notes + "\nMore."
+        tags.write(str(path), {"obsidian_notes": editor.changed["obsidian_notes"]})
+        assert tags.read(str(path)).track.obsidian_notes == notes + "\nMore."
+        assert value_of(tags.read(str(path)).track, "obsidian_notes") == "Saw her live in 2019. / The bridge still gets " \
+                                                                     "me. / More."
+        tags.write(str(path), {"obsidian_notes": "  "})  # emptied: the tag is removed
+        assert tags.read(str(path)).track.obsidian_notes == ""

@@ -31,7 +31,7 @@ STANDARD = [("title", "Title"), ("artist", "Artist"), ("album_artist", "Album Ar
             ("track", "Track #"), ("disc", "Disc #"), ("rating", "Rating")]
 EXTRA = [("album_type", "Album Type"), ("edition", "Edition"), ("original_artist", "Original Artist"),
          ("original_album", "Original Album"), ("original_year", "Original Year"),
-         ("obsidian_tags", "Obsidian tags")]
+         ("obsidian_tags", "Obsidian tags"), ("obsidian_notes", "Obsidian notes")]
 FIELDS = STANDARD + EXTRA
 ART = 220
 
@@ -44,6 +44,9 @@ def value_of(t: Track, key: str) -> str:
         return stars(t.rating)
     if key == "obsidian_tags":
         return " ".join(f"#{x}" for x in tags.split_tags(t.obsidian_tags))
+    if key == "obsidian_notes":
+        text = " / ".join(line.strip() for line in t.obsidian_notes.splitlines() if line.strip())
+        return text if len(text) <= 160 else text[:157] + "…"
     return str(getattr(t, key, "") or "")
 
 

@@ -24,7 +24,7 @@ from music_manager.ui.main_window import MainWindow as MusicWindow
 from photo_manager.ui.folders import dropped_files, wants_copy
 from photo_manager.ui.main_window import MainWindow as PhotoWindow
 
-from . import __version__, bars
+from . import __version__, bars, scrub
 from .movies.window import KINDS, MoviesWindow
 from .settings import MediaSettings
 
@@ -99,6 +99,7 @@ class MediaWindow(QMainWindow):
             self.photo_tree.hide()
             self.photo_tree.toggleViewAction().setVisible(False)
 
+        scrub.install(self.music, self.movies)  # drag along any timeline to scrub
         # The same top-bar layout in every section.
         self.music_folder = bars.music_bar(self.music, self)
         self.photo_folder, self.photo_search = bars.photo_bar(self.photos)
