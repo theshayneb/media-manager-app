@@ -29,7 +29,7 @@ class MediaSettings:
     photo_tree: bool = False      # Photo Manager's own folder tree shown
     movie_volume: int = 70
     window_geometry: str = ""
-    splitter_state: str = ""
+    window_state: str = ""        # where the Folders, Selected and Tags panels are
 
     path: Path = field(default_factory=lambda: config_dir() / "settings.json", repr=False)
 

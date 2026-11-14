@@ -7,8 +7,8 @@ import os
 import subprocess
 import sys
 
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QKeySequence
+from PySide6.QtCore import QRect, Qt, QUrl, Signal
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QGuiApplication, QImage, QKeySequence, QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from music_manager.ui.editor import ElidedLabel
 from music_manager.ui.model import fmt_time
 from music_manager.ui.workers import Background
 
@@ -40,8 +41,7 @@ from . import files
 from .naming import plex_name
 
 try:
-    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-    from PySide6.QtMultimediaWidgets import QVideoWidget
+    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 
     HAVE_VIDEO = True
 except ImportError:  # pragma: no cover
@@ -52,6 +52,35 @@ KINDS = {"movies": "Movies", "tv": "TV Shows"}
 
 def size_text(n: int) -> str:
     return f"{n / 1024 ** 3:.2f} GB" if n >= 1024 ** 3 else f"{n / 1024 ** 2:.0f} MB"
+
+
+class VideoScreen(QWidget):
+    """Draws the video frames itself, as Photo Manager's preview does. (Qt's QVideoWidget puts a separate
+    native window inside the app, which on Windows stopped clicks and redraws in the rest of the window.)"""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.image = QImage()
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
+
+    def set_frame(self, image: QImage) -> None:
+        self.image = image
+        self.update()
+
+    def clear(self) -> None:
+        self.image = QImage()
+        self.update()
+
+    def paintEvent(self, _event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("black"))
+        if self.image.isNull():
+            return
+        size = self.image.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
+        target = QRect(0, 0, size.width(), size.height())
+        target.moveCenter(self.rect().center())
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.drawImage(target, self.image)
 
 
 class PlanDialog(QDialog):
@@ -123,7 +152,7 @@ class MoviesWindow(QMainWindow):
         right = QWidget()
         rv = QVBoxLayout(right)
         rv.setContentsMargins(0, 0, 0, 0)
-        self.screen = QVideoWidget() if HAVE_VIDEO else QLabel("Video playback isn't available")
+        self.screen = VideoScreen() if HAVE_VIDEO else QLabel("Video playback isn't available")
         self.screen.setMinimumSize(320, 180)
         self.screen.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         rv.addWidget(self.screen, 1)
@@ -166,7 +195,9 @@ class MoviesWindow(QMainWindow):
             self.player = QMediaPlayer(self)
             self.audio = QAudioOutput(self)
             self.player.setAudioOutput(self.audio)
-            self.player.setVideoOutput(self.screen)
+            self.sink = QVideoSink(self)
+            self.sink.videoFrameChanged.connect(self._frame)
+            self.player.setVideoSink(self.sink)
             self.audio.setVolume((self.volume.value() / 100) ** 3)
             self.volume.valueChanged.connect(lambda v: self.audio.setVolume((v / 100) ** 3))
             self.player.positionChanged.connect(self._position)
@@ -210,8 +241,12 @@ class MoviesWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         bar.addWidget(spacer)
-        self.where = QLabel("")
+        self.where = ElidedLabel("")  # a long path mustn't push the player off the window
         self.where.setStyleSheet("color: palette(placeholder-text); padding: 0 6px;")
+        self.where.setMinimumWidth(80)
+        self.where.setMaximumWidth(420)
+        self.where.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.where.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         bar.addWidget(self.where)
         add = QToolButton()
         add.setText("📁 Add Folder ▾")
@@ -308,6 +343,10 @@ class MoviesWindow(QMainWindow):
             self.player.setSource(QUrl.fromLocalFile(paths[0]))
             self.player.play()
 
+    def _frame(self, frame) -> None:  # type: ignore[no-untyped-def]
+        if self.playing and frame.isValid():
+            self.screen.set_frame(frame.toImage())
+
     def toggle(self) -> None:
         if not HAVE_VIDEO:
             return
@@ -329,6 +368,7 @@ class MoviesWindow(QMainWindow):
             self.player.setSource(QUrl())
             self.playing = ""
             self.now.setText("")
+            self.screen.clear()
 
     def stop(self) -> None:
         if HAVE_VIDEO:

@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMenu,
-    QSplitter,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -99,34 +98,46 @@ class MediaWindow(QMainWindow):
         if self.photo_tree is not None:
             self.photo_tree.setVisible(media.photo_tree)
 
-        left = QWidget()
-        left.setMinimumWidth(190)
-        left.setMaximumWidth(260)
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0)
+        # The panels: Folders and Selected (album art + check-up) here, and Music's Tags panel moved out
+        # of Music so all three can be dragged by their titles to any edge of the window.
         self.list = FolderList(self)
         self.list.setStyleSheet("QListWidget { font-size: 14px; } QListWidget::item { padding: 4px 6px; }")
         self.list.itemClicked.connect(self._clicked)
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self._menu)
-        lv.addWidget(self.list, 1)
+        self.list.setMinimumWidth(190)
+        self.folders_dock = self._dock("Folders", "media-folders", self.list)
+
         self.music_extras = QWidget()
         mv = QVBoxLayout(self.music_extras)
         mv.setContentsMargins(0, 0, 0, 0)
+        self.music.now_card.heading.hide()  # the panel's title says it
         mv.addWidget(self.music.now_card)
         mv.addWidget(self.music.checkup)
-        lv.addWidget(self.music_extras)
+        mv.addStretch(1)
+        self.selected_dock = self._dock("Selected", "media-selected", self.music_extras)
+        card, show_track = self.music.now_card, self.music.now_card.show_track
 
-        self.split = QSplitter()
-        self.split.addWidget(left)
-        self.split.addWidget(self.stack)
-        self.split.setStretchFactor(1, 1)
-        self.split.setCollapsible(0, False)
-        self.setCentralWidget(self.split)
+        def titled_show_track(track, playing):  # type: ignore[no-untyped-def]
+            show_track(track, playing)
+            self.selected_dock.setWindowTitle(card.heading.text().title())  # "Selected" / "Now Playing"
+
+        card.show_track = titled_show_track
+
+        self.tags_dock = self.music.editor_dock
+        self.music.removeDockWidget(self.tags_dock)
+
+        self.setCentralWidget(self.stack)
+        self.setDockOptions(QMainWindow.DockOption.AnimatedDocks | QMainWindow.DockOption.AllowNestedDocks)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.folders_dock)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.selected_dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.tags_dock)
+        self.tags_dock.show()
+        self.resizeDocks([self.folders_dock], [240], Qt.Orientation.Horizontal)
         if media.window_geometry:
             self.restoreGeometry(QByteArray.fromBase64(media.window_geometry.encode()))
-        if media.splitter_state:
-            self.split.restoreState(QByteArray.fromBase64(media.splitter_state.encode()))
+        if media.window_state:
+            self.restoreState(QByteArray.fromBase64(media.window_state.encode()))
 
         # Keep the list up to date when folders are added, renamed or removed in any part.
         self._wrap(self.music, "_fill_views")
@@ -134,6 +145,14 @@ class MediaWindow(QMainWindow):
         self.movies.folders_changed.connect(self.fill)
         self.fill()
         QTimer.singleShot(50, self._restore)
+
+    def _dock(self, title: str, name: str, widget: QWidget) -> QDockWidget:
+        dock = QDockWidget(title, self)
+        dock.setObjectName(name)
+        dock.setWidget(widget)
+        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
+        dock.setToolTip("Drag this panel by its title to move it to another edge of the window")
+        return dock
 
     def _wrap(self, part, name: str) -> None:  # type: ignore[no-untyped-def]
         original = getattr(part, name)
@@ -236,7 +255,8 @@ class MediaWindow(QMainWindow):
         self.kind = kind
         part = {"photos": self.photos, "music": self.music, "movies": self.movies}[kind]
         self.stack.setCurrentWidget(part)
-        self.music_extras.setVisible(kind == "music")
+        self.selected_dock.setVisible(kind == "music")
+        self.tags_dock.setVisible(kind == "music")
 
     def _menu(self, pos) -> None:  # type: ignore[no-untyped-def]
         item = self.list.itemAt(pos)
@@ -269,7 +289,7 @@ class MediaWindow(QMainWindow):
     # ------------------------------------------------------------ closing
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         self.media.window_geometry = bytes(self.saveGeometry().toBase64()).decode()
-        self.media.splitter_state = bytes(self.split.saveState().toBase64()).decode()
+        self.media.window_state = bytes(self.saveState().toBase64()).decode()
         for part in (self.movies, self.music, self.photos):
             part.close()  # each saves its own settings and stops its work
         try:

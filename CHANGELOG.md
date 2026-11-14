@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1
+
+- Fixed: clicks were ignored all over the window (songs couldn't be picked one after another, photo group
+  headings did nothing and had no right-click menu). The Movies player used Qt's video widget, which puts a
+  separate native window inside the app; on Windows that stopped clicks and redraws elsewhere. Movies now
+  draw their frames themselves, as Photo Manager's preview does.
+- The Folders, Selected (album art + check-up) and Tags panels can each be dragged by their title to any
+  edge of the window; where you put them is remembered. Selected and Tags show while Music is open.
+- Movies & TV: a long folder path in the toolbar no longer pushes the player off the window.
+
 ## 0.1.0
 
 - First version: Photo Manager 0.13.0 and Music Manager 0.8.2 in one window, plus Movies & TV.
