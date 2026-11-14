@@ -12,7 +12,9 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   own toolbar actions and widgets (shortcuts kept) and adds the 📂 folder button, ⚙ ▾, Photos' search and
   Music's Move to. Photos' menu row is hidden. Music's Tags and Photos' Details docks live in `MediaWindow`.
 - Changed inside `music_manager/` on the user's request: the Tags panel's Rating row is on its own line;
-  "Obsidian notes" (TXXX:Obsidian Notes / Vorbis OBSIDIAN NOTES, one free-text value) on the Extra tab.
+  "Obsidian notes" (TXXX:Obsidian Notes / Vorbis OBSIDIAN NOTES, one line of text) on the Extra tab, above
+  Obsidian tags; the tag cache accepts versions 9 and 10, and Music reads the Library at start when the cache
+  has none of it (`_fill_cache`).
 - `scrub.py`: every timeline slider jumps to a click and follows a drag (a QProxyStyle per slider; Photos'
   VideoView is patched before Photo Manager's window is built).
 - Each part keeps its own settings file, so the user's existing Photo/Music settings carry over.

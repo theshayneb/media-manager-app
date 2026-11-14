@@ -174,34 +174,6 @@ class TabPages(QTabWidget):
         return self._page_height(max(0, width - 4)) + self._extra()
 
 
-class NotesField(QPlainTextEdit):
-    """A few lines of free text that works like the one-line boxes (text / setText / textEdited)."""
-
-    textEdited = Signal(str)
-    returnPressed = Signal()  # never sent: Enter starts a new line
-    editingFinished = Signal()
-
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.setTabChangesFocus(True)
-        lines = 4
-        self.setFixedHeight(self.fontMetrics().lineSpacing() * lines + 14)
-        self._setting = False
-        self.textChanged.connect(lambda: None if self._setting else self.textEdited.emit(self.toPlainText()))
-
-    def text(self) -> str:
-        return self.toPlainText()
-
-    def setText(self, text: str) -> None:  # noqa: N802
-        self._setting = True
-        self.setPlainText(text)
-        self._setting = False
-
-    def focusOutEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        super().focusOutEvent(event)
-        self.editingFinished.emit()
-
-
 class ElidedLabel(QLabel):
     """One line; a name too long for the width ends in "…" (the whole name is in the tooltip)."""
 
@@ -301,14 +273,14 @@ class TagEditor(QWidget):
         self.edits: dict[str, QLineEdit] = {}
 
         def field(key: str):  # type: ignore[no-untyped-def]
-            edit = (TagsField() if key == "obsidian_tags" else NotesField() if key == "obsidian_notes"
-                    else ComboField() if key in CHOICE_FIELDS else QLineEdit())
+            edit = TagsField() if key == "obsidian_tags" else ComboField() if key in CHOICE_FIELDS else QLineEdit()
             self.edits[key] = edit
             return edit
 
         for key in ("title", "artist", "album_artist", "album", "year", "genre", "language", "tempo"):
             form.addRow(tags.FIELD_LABELS[key], field(key))
-        for key in ("album_type", "edition", "original_artist", "original_album", "original_year", "obsidian_tags"):
+        for key in ("album_type", "edition", "original_artist", "original_album", "original_year", "obsidian_notes",
+                    "obsidian_tags"):
             more.addRow(tags.FIELD_LABELS[key], field(key))
         self.edits["album_type"].setToolTip("e.g. album, single, ep, compilation, live, or album;live. Saved as "
                                             "both MusicBrainz Album Type and RELEASETYPE, kept the same.")
@@ -354,7 +326,6 @@ class TagEditor(QWidget):
         self.chips_hint.setStyleSheet("color: palette(placeholder-text);")
         more.addRow(self.chips_hint)
         more.addRow(chips_box)
-        more.addRow(tags.FIELD_LABELS["obsidian_notes"], field("obsidian_notes"))
         self.edits["obsidian_notes"].setPlaceholderText("Your notes about this song")
         self.edits["obsidian_notes"].setToolTip(
             "Notes for the song's note in your Obsidian vault. Saved as the file's “Obsidian Notes” tag; the Media "

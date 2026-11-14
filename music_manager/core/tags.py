@@ -114,7 +114,7 @@ class Track:
     original_year: str = ""    # ID3 TORY (v2.4 TDOR)
     album_type: str = ""       # "album;live": TXXX:MusicBrainz Album Type and TXXX:RELEASETYPE (kept the same)
     obsidian_tags: str = ""    # "feminism; holiday": TXXX:Obsidian Tags, one value each, for the Obsidian vault
-    obsidian_notes: str = ""   # free text (several lines allowed): TXXX:Obsidian Notes, for the note's Notes
+    obsidian_notes: str = ""   # a short line of free text: TXXX:Obsidian Notes, for the note's Notes property
     tempo: str = ""         # MusicBee's Tempo (ID3 TXXX:TEMPO), e.g. "Fast"
     rating: int = 0
     plays: int = 0          # play count, if a player stored it in the file (never written by this app)
@@ -383,7 +383,7 @@ def _read_mp3(d: Details) -> None:
         elif desc.casefold() == OBSIDIAN_TAGS.casefold():
             t.obsidian_tags = "; ".join(clean_tag(str(x)) for x in frame.text if clean_tag(str(x)))
         elif desc.casefold() == OBSIDIAN_NOTES.casefold():
-            t.obsidian_notes = "\n".join(str(x) for x in frame.text).strip()
+            t.obsidian_notes = " ".join(" ".join(str(x).split()) for x in frame.text).strip()  # one line
         elif desc not in KNOWN_TXXX and desc.lower().replace("_", "").replace(" ", "") not in PLAY_COUNT_NAMES:
             d.extra[frame.desc] = " / ".join(str(x) for x in frame.text)
     for frame in tags.getall("COMM"):
@@ -414,7 +414,7 @@ KNOWN_TXXX = {"REPLAYGAIN_TRACK_GAIN", "REPLAYGAIN_TRACK_PEAK", "TEMPO", "TSST",
 # The tag Media Manager can read into a note's tags (its music library: source "a tag in the file",
 # name "Obsidian Tags"). One value per tag, without the "#".
 OBSIDIAN_TAGS = "Obsidian Tags"
-# Free text for the note's "Notes" property (one value; line breaks kept).
+# Free text for the note's "Notes" property (one value, one line).
 OBSIDIAN_NOTES = "Obsidian Notes"
 ALBUM_TYPE_TAGS = {"musicbrainz album type", "releasetype"}
 ALBUM_TYPES = ["album", "single", "ep", "compilation", "soundtrack", "live", "remix", "album;live",
@@ -572,7 +572,7 @@ def _read_flac(d: Details) -> None:
     t.album_type = _vorbis(tags, "releasetype", "musicbrainz_albumtype")
     t.original_year = (_vorbis(tags, "originalyear") or _vorbis(tags, "originaldate"))[:4]
     t.obsidian_tags = "; ".join(clean_tag(x) for x in (tags.get(OBSIDIAN_TAGS.lower(), []) if tags else []))
-    t.obsidian_notes = "\n".join(tags.get(OBSIDIAN_NOTES.lower(), []) if tags else []).strip()
+    t.obsidian_notes = " ".join(" ".join(x.split()) for x in (tags.get(OBSIDIAN_NOTES.lower(), []) if tags else []))
     t.tempo = _vorbis(tags, "tempo")
     t.edition = _vorbis(tags, "discsubtitle", "edition")
     t.plays = max((_int(_vorbis(tags, k)) for k in ("playcount", "play_count", "fmps_playcount", "play_counter")),

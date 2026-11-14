@@ -594,6 +594,29 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(0, apply)
 
+    def _fill_cache(self) -> None:
+        """With nothing from the Library in the tag cache (first start, or the cache was reset), read the
+        Library in the background, so the drop-downs, tag chips and check-up know its songs straight away."""
+        folder = self.settings.library_folder
+        if not folder or not os.path.isdir(folder):
+            return
+        with self.cache._lock:
+            known = any(inside(v.get("path", ""), folder) for v in self.cache._items.values())
+        if known:
+            return
+        subfolders = self.subfolders("library")
+
+        def work() -> None:
+            for path in library.list_songs(folder, subfolders):
+                self.cache.get(path)
+            self.cache.save()
+
+        def done(_result, _error) -> None:  # type: ignore[no-untyped-def]
+            self._update_choices()
+            self._update_checkup()
+
+        self.scan_bg.run(work, done)
+
     def _start(self) -> None:
         self._folders_moved(self.dockWidgetArea(self.folders_dock))
         self._restore_album_columns()
@@ -603,6 +626,7 @@ class MainWindow(QMainWindow):
             self.view = "review"
         self._select_view_item(self.view)
         QTimer.singleShot(500, self._update_checkup)
+        QTimer.singleShot(1500, self._fill_cache)
         if not self.ffmpeg:
             self.flash("ffmpeg wasn't found: converting to MP3 and measuring volume won't work.")
 

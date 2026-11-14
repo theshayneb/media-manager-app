@@ -12,6 +12,9 @@ from . import tags
 from .settings import cache_dir
 
 CACHE_VERSION = 10  # ... 7: original artist/album/year, Obsidian tags, 8: album type, 10: Obsidian notes
+# Older caches that are still good: 10 only added Obsidian notes, which only this app writes (and saving
+# updates the cache), so a version 9 cache needn't be read again.
+COMPATIBLE_VERSIONS = {9, 10}
 
 
 def list_songs(folder: str, subfolders: bool) -> list[str]:
@@ -38,7 +41,7 @@ class TagCache:
         self._dirty = False
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            if data.get("version") == CACHE_VERSION:
+            if data.get("version") in COMPATIBLE_VERSIONS:
                 self._items = data.get("items", {})
         except (OSError, ValueError, AttributeError):
             pass

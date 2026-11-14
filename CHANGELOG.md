@@ -1,11 +1,18 @@
 # Changelog
 
+## 0.3.1
+
+- Fixed: the Obsidian tag chips were gone. 0.3.0 reset Music's tag cache, so it knew no tags until the Library
+  was opened again. The cache is kept now, and when it has nothing from the Library, the Library is read in the
+  background at start-up (chips, drop-downs and the check-up know its songs straight away).
+- Obsidian notes is one line now, above Obsidian tags (the chips stay right under the tags).
+
 ## 0.3.0
 
 - Scrubbing: every playback timeline (Music, Photos videos, Movies & TV) jumps to where you click and
   follows the mouse while you drag, playing from there (Music used to jump only when you let go).
-- Music: new "Obsidian notes" box on the Tags panel's Extra tab (free text, several lines). Saved in the file
-  as TXXX:Obsidian Notes (MP3) / OBSIDIAN NOTES (FLAC), one value with its line breaks; also in the Keep review.
+- Music: new "Obsidian notes" box on the Tags panel's Extra tab. Saved in the file as TXXX:Obsidian Notes (MP3) /
+  OBSIDIAN NOTES (FLAC), one value; also in the Keep review.
   For the Obsidian Media Manager plugin to add to a note's Notes property.
 
 ## 0.2.2

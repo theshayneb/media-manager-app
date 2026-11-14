@@ -412,16 +412,15 @@ def test_obsidian_notes(app, song):
     from music_manager.ui.editor import TagEditor
     from music_manager.ui.review import value_of
 
-    notes = "Saw her live in 2019.\nThe bridge still gets me."
+    notes = "Recommended by Josh"
     for name in ("x.mp3", "y.flac"):
         path = song(name)
         tags.write(str(path), {"obsidian_notes": notes, "obsidian_tags": "live"})
         d = tags.read(str(path), with_details=True)
-        assert d.track.obsidian_notes == notes
-        assert d.track.obsidian_tags == "live"
+        assert d.track.obsidian_notes == notes and d.track.obsidian_tags == "live"
         assert all("obsidian" not in key.casefold() for key, _n, _v in d.frames)  # not under "Other"
         if name.endswith(".mp3"):
-            assert ID3(str(path))["TXXX:Obsidian Notes"].text == [notes]  # one value, lines kept
+            assert ID3(str(path))["TXXX:Obsidian Notes"].text == [notes]
         else:
             assert FLAC(str(path))["obsidian notes"] == [notes]
 
@@ -429,11 +428,54 @@ def test_obsidian_notes(app, song):
         editor.show_tracks([d.track], d)
         box = editor.edits["obsidian_notes"]
         assert box.text() == notes and not editor.changed
-        box.setPlainText(notes + "\nMore.")  # typed
-        assert editor.changed["obsidian_notes"] == notes + "\nMore."
+        box.setText(notes + ", saw her live")
+        box.textEdited.emit(box.text())  # as typed
+        assert editor.changed["obsidian_notes"] == notes + ", saw her live"
         tags.write(str(path), {"obsidian_notes": editor.changed["obsidian_notes"]})
-        assert tags.read(str(path)).track.obsidian_notes == notes + "\nMore."
-        assert value_of(tags.read(str(path)).track, "obsidian_notes") == "Saw her live in 2019. / The bridge still gets " \
-                                                                     "me. / More."
+        assert value_of(tags.read(str(path)).track, "obsidian_notes") == notes + ", saw her live"
+        tags.write(str(path), {"obsidian_notes": "two\nlines"})  # shown on one line
+        assert tags.read(str(path)).track.obsidian_notes == "two lines"
         tags.write(str(path), {"obsidian_notes": "  "})  # emptied: the tag is removed
         assert tags.read(str(path)).track.obsidian_notes == ""
+
+    # The box sits above Obsidian tags, and the tag chips are still there below it.
+    form = editor.edits["obsidian_tags"].parentWidget().layout()
+    rows = [form.getWidgetPosition(editor.edits[k])[0] for k in ("obsidian_notes", "obsidian_tags")]
+    assert rows[0] < rows[1]
+    assert form.getWidgetPosition(editor.chips_hint)[0] > rows[1]
+
+
+def test_cache_from_before_notes_is_kept(tmp_path, monkeypatch):
+    import json
+
+    from music_manager.core import library
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    cache = library.TagCache()
+    cache.path.parent.mkdir(parents=True, exist_ok=True)
+    item = {"path": "C:/x.mp3", "title": "X", "obsidian_tags": "pop"}
+    cache.path.write_text(json.dumps({"version": 9, "items": {"c:/x.mp3": item}}), encoding="utf-8")
+    again = library.TagCache()
+    assert again._items == {"c:/x.mp3": item}  # a version 9 cache isn't thrown away
+
+
+@needs_ffmpeg
+def test_library_read_at_start_when_cache_is_empty(app, song, tmp_path):
+    """Opened on Review with an empty tag cache: the Library is read in the background, so its
+    Obsidian tags show as chips without opening the Library first."""
+    from music_manager.ui.main_window import MainWindow
+
+    lib, review = tmp_path / "lib", tmp_path / "rev"
+    lib.mkdir()
+    review.mkdir()
+    for n, tag in enumerate(("feminism", "holiday")):
+        p = song(f"lib/s{n}.mp3")
+        tags.write(str(p), {"obsidian_tags": tag})
+    song("rev/new.mp3")
+    settings = Settings.load()
+    settings.library_folder, settings.review_folder, settings.last_view = str(lib), str(review), "review"
+    window = MainWindow(settings, FFMPEG)
+    window.show()
+    wait(app, window, 8, until=lambda: {"feminism", "holiday"} <= set(window.editor.chip_buttons))
+    assert {"feminism", "holiday"} <= set(window.editor.chip_buttons)
+    window.close()
