@@ -76,4 +76,5 @@ def test_movie_folder_shows_add_entry_when_empty(tmp_path):
 
     win = build_window()
     assert win._item("movies", "movie-add") is not None
+    _wait(lambda: False, 0.7)  # let the start-up timers run before closing
     win.close()

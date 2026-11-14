@@ -23,7 +23,9 @@ def test_movie_names():
 
 
 def test_companion_target():
-    assert companion_target("/m/Old.en.srt", "/m/Old.mkv", "/m/New (2019).mkv") == "/m/New (2019).en.srt"
+    target = companion_target(os.path.join("m", "Old.en.srt"), os.path.join("m", "Old.mkv"),
+                              os.path.join("m", "New (2019).mkv"))
+    assert target == os.path.join("m", "New (2019).en.srt")
 
 
 def test_list_rename_move_delete(tmp_path, monkeypatch):
