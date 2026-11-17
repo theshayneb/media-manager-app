@@ -138,15 +138,7 @@ class CheckUp(QWidget):
                 self.numbers[key] = number
             grid.setColumnStretch(0, 1)
             layout.addLayout(grid)
-        layout.addWidget(_section("KEPT THIS WEEK"))
-        row = QGridLayout()
-        row.setContentsMargins(0, 2, 0, 0)
-        row.addWidget(QLabel("Songs kept"), 0, 0)
-        self.kept = QLabel("0")
-        self.kept.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        row.addWidget(self.kept, 0, 1)
-        row.setColumnStretch(0, 1)
-        layout.addLayout(row)
+        self.kept = QLabel("0")  # "Kept this week" isn't shown (the user didn't want it); kept for set_counts
         hint = QLabel("Click one to show those songs")
         hint.setStyleSheet("color: palette(placeholder-text); font-size: 11px; padding-top: 4px;")
         layout.addWidget(hint)

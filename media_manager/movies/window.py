@@ -224,7 +224,7 @@ class MoviesWindow(QMainWindow):
             bar.addAction(a)
             return a
 
-        from ..bars import GEAR, FolderButton, label_as, menu_button, shared_icons
+        from ..bars import GEAR, FolderButton, flatten, label_as, menu_button, shared_icons
 
         play = act("Play", self.play_selected, "Return")
         act("Rename for Plex", self.rename_plex, None,
@@ -258,6 +258,7 @@ class MoviesWindow(QMainWindow):
         gear_menu.addAction("Remove this folder from the Folders list",
                             lambda: self.remove_folder(self.entry.get("path", "")) if self.entry else None)
         bar.addWidget(menu_button(GEAR, gear_menu, "Settings: folder options"))
+        flatten(bar)
 
     # ------------------------------------------------------------ folders
     def add_folder(self, kind: str) -> None:

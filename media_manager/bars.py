@@ -91,6 +91,17 @@ def spacer() -> QWidget:
     return w
 
 
+# Qt's style draws a light line along a toolbar's top edge, which the panel titles beside it don't have.
+FLAT_BAR = "QToolBar { border: none; border-bottom: 1px solid #737476; }"
+
+
+def flatten(bar: QToolBar) -> None:
+    """No line along the bar's top edge (it kept its bottom one), at the height it had before."""
+    height = bar.sizeHint().height()
+    bar.setStyleSheet(FLAT_BAR)
+    bar.setMinimumHeight(height)
+
+
 def rearrange(window: QMainWindow, bar: QToolBar, items: list) -> None:
     """Put bar's contents in this order. items: QAction (one of the bar's or a new one), QWidget (one of
     the bar's or a new one), or "|" for a separator. Anything of the bar's not listed is taken off it, its
@@ -116,6 +127,7 @@ def rearrange(window: QMainWindow, bar: QToolBar, items: list) -> None:
     for a in old:
         if id(a) not in used and not a.isSeparator() and id(a) not in widget_actions:
             window.addAction(a)  # keeps its shortcut
+    flatten(bar)
 
 
 def _all_actions(menu: QMenu) -> list[QAction]:
@@ -288,7 +300,10 @@ def photo_bar(photos) -> tuple[FolderButton, QLineEdit]:  # type: ignore[no-unty
     _add_photo_search(photos, search)
 
     shared_icons(rename, texts.get("Move to"), texts.get("Delete"), texts.get("Show in Explorer"), refresh)
-    items = [texts.get("View"), texts.get("Convert"), texts.get("Open"), "|",
+    steam = texts.get("Steam import…")
+    if steam is not None:
+        label_as(steam, "Steam import")  # its button, between Convert and Open (the user's request)
+    items = [texts.get("View"), texts.get("Convert"), steam, texts.get("Open"), "|",
              rename, texts.get("Move to"), texts.get("Delete"), texts.get("Show in Explorer"), "|",
              search, label("Sort:"), photos.sort_combo, label("Group:"), photos.group_combo, photos.filter_btn,
              label("Size:"), slider, spacer(), folder, photos.fav_action, view_btn, refresh, gear]

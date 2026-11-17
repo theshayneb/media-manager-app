@@ -357,3 +357,21 @@ def test_timelines_scrub(tmp_path):
         QTest.mouseClick(slider, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(300, 10))
         assert slider.value() > 50000, slider.value()
     win.close()
+
+
+def test_steam_import_kept_this_week_and_flat_bars(tmp_path):
+    from PySide6.QtWidgets import QLabel, QToolBar
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+
+    _music_folders(tmp_path)
+    win = build_window()
+    photos = _bar_texts(win.photos)
+    assert photos.index("Convert") < photos.index("Steam import") < photos.index("Open")
+    texts = [w.text() for w in win.music.checkup.findChildren(QLabel)]
+    assert not any("KEPT THIS WEEK" in t or "Songs kept" in t for t in texts)
+    for part in (win.music, win.photos, win.movies):
+        bar = next(b for b in part.findChildren(QToolBar) if not b.isHidden())
+        assert "border: none" in bar.styleSheet()  # no line along the top edge
+    win.close()

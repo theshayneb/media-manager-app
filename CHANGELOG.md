@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- Music: the check-up no longer shows "Kept this week".
+- Photos: a Steam import button in the top bar, between Convert and Open (still also under ⚙).
+- Fixed: a light line along the top of every top bar made it look out of step with the panel titles beside
+  it. The bars keep their height and their bottom line.
+
 ## 0.3.1
 
 - Fixed: the Obsidian tag chips were gone. 0.3.0 reset Music's tag cache, so it knew no tags until the Library
