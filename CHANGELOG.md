@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2
+
+- Edit window: a checkbox on the left of every slider. Untick it to see the photo as if that slider had never
+  been moved (it's left out when saving too); its value is kept, so ticking it again brings it back.
+- Saturation sliders: All colours, then Red, Orange, Yellow, Green, Aqua, Blue, Purple and Pink
+  (less colour ← → more colour), each with its ↺ and checkbox.
+- The sliders sit in one column you can scroll: LIGHT & COLOUR, then SATURATION.
+
 ## 0.4.1
 
 - Edit window: opens maximized (it has Minimize / Maximize buttons now); the before/after line starts at the

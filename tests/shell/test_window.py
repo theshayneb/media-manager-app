@@ -445,6 +445,20 @@ def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
     dlg2._render()
     c = dlg2.view.after.pixelColor(40, 30)
     assert max(c.red(), c.green(), c.blue()) - min(c.red(), c.green(), c.blue()) < 12
+    # A checkbox leaves a slider out (on screen and when saving), keeping its value.
+    dlg2.reset()
+    dlg2.values["contrast"].setValue(40)
+    dlg2.values["sat_orange"].setValue(50)
+    dlg2.checks["contrast"].setChecked(False)
+    a = dlg2.adjustments()
+    assert a.contrast == 0 and a.sat_orange == 50 and dlg2.values["contrast"].value() == 40
+    assert not dlg2.values["contrast"].isEnabled() and dlg2.save_btn.isEnabled()
+    dlg2.checks["sat_orange"].setChecked(False)
+    assert dlg2.adjustments().unchanged() and not dlg2.save_btn.isEnabled()
+    dlg2.checks["contrast"].setChecked(True)
+    assert dlg2.adjustments().contrast == 40
+    dlg2.reset()
+    assert all(c.isChecked() for c in dlg2.checks.values()) and len(dlg2.checks) == 14
     dlg2.close()
     dlg.close()
 

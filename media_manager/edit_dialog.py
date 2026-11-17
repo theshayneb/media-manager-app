@@ -10,11 +10,14 @@ from PIL import Image
 from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSlider,
     QToolButton,
@@ -24,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from photo_manager.core.thumbs import open_image
 
-from .photo_edit import SAVED_AS_JPG, Adjustments, apply, auto, white_balance_at
+from .photo_edit import SATURATION, SAVED_AS_JPG, Adjustments, apply, auto, white_balance_at
 from .scrub import make_scrubbable
 
 PREVIEW_PIXELS = 2400  # sharp enough for a maximized window
@@ -42,6 +45,15 @@ def to_qimage(image: Image.Image) -> QImage:
     image = image.convert("RGBA")
     data = image.tobytes("raw", "RGBA")
     return QImage(data, image.width, image.height, image.width * 4, QImage.Format.Format_RGBA8888).copy()
+
+
+SAT_COLOURS = ["#e04040", "#f08a30", "#e8d040", "#40b050", "#30c0c0", "#3b78d8", "#9050d0", "#e050a0"]
+
+
+def _heading(text: str, note: str = "") -> QLabel:
+    label = QLabel(f"<b>{text}</b>" + (f" <span style='font-weight:normal'>{note}</span>" if note else ""))
+    label.setStyleSheet("color: #9aa0a8; font-size: 11px; letter-spacing: 0.5px; padding-top: 8px;")
+    return label
 
 
 class CompareView(QWidget):
@@ -154,13 +166,14 @@ class EditDialog(QDialog):
         self.numbers: dict[str, QLabel] = {}
 
         self.resets: dict[str, QToolButton] = {}
+        self.checks: dict[str, QCheckBox] = {}
+        self.parts: dict[str, list[QWidget]] = {}  # each slider's widgets, greyed out when it's unticked
         sliders = QWidget()
-        sliders.setFixedWidth(300)
         sv = QVBoxLayout(sliders)
-        sv.setContentsMargins(0, 0, 0, 0)
+        sv.setContentsMargins(0, 0, 8, 0)
         top = QHBoxLayout()
         self.auto_all = QPushButton("Auto all")
-        self.auto_all.setToolTip("Set all five sliders from the photo (you can still move them after)")
+        self.auto_all.setToolTip("Set the light and colour sliders from the photo (you can still move them after)")
         self.auto_all.setAutoDefault(False)
         self.auto_all.clicked.connect(lambda: self.set_auto(None))
         self.pick_btn = QPushButton("Pick white")
@@ -176,57 +189,73 @@ class EditDialog(QDialog):
         self.pick_hint.setStyleSheet("color: #e0a040; font-size: 11px;")
         self.pick_hint.setVisible(False)
         sv.addWidget(self.pick_hint)
-        sv.addSpacing(8)
         self.view.picked.connect(self._picked)
+
+        sv.addWidget(_heading("LIGHT & COLOUR"))
         for key, name, left, right, colours in SLIDERS:
             grid = QGridLayout()
             grid.setVerticalSpacing(2)
             grid.setHorizontalSpacing(4)
-            title, number = QLabel(name), QLabel("0")
-            number.setAlignment(Qt.AlignmentFlag.AlignRight)
-            number.setStyleSheet("color: palette(placeholder-text);")
-            slider = QSlider(Qt.Orientation.Horizontal)
-            slider.setRange(-100, 100)
-            slider.setValue(0)
-            slider.setToolTip(f"{name}: click a spot to jump there, or drag")
-            stops = ", ".join(f"stop:{i / (len(colours) - 1):.2f} {c}" for i, c in enumerate(colours))
-            slider.setStyleSheet(
-                "QSlider::groove:horizontal { height: 6px; border-radius: 3px; "
-                f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, {stops}); }}"
-                "QSlider::handle:horizontal { width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; "
-                "background: #e6e6e6; border: 1px solid #888888; }")
-            make_scrubbable(slider)  # a click jumps there
-            slider.valueChanged.connect(lambda v, key=key: self._changed(key, v))
-            reset = QToolButton(text="↺")
-            reset.setAutoRaise(True)
-            reset.setToolTip(f"Put {name} back to 0")
-            reset.setEnabled(False)
-            reset.clicked.connect(lambda _c=False, s=slider: s.setValue(0))
+            check = self._check(key, name)
+            title, number = QLabel(name), self._number()
+            slider = self._slider(key, name, colours)
+            reset = self._reset(key, name, slider)
             auto_btn = QToolButton(text="A")
             auto_btn.setAutoRaise(True)
             auto_btn.setToolTip(f"Auto: set {name} from the photo")
             auto_btn.clicked.connect(lambda _c=False, key=key: self.set_auto(key))
             ends = QHBoxLayout()
+            labels = []
             for text, align in ((left, Qt.AlignmentFlag.AlignLeft), (right, Qt.AlignmentFlag.AlignRight)):
                 label = QLabel(text)
-                label.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
+                label.setStyleSheet("QLabel { color: palette(placeholder-text); font-size: 11px; }"
+                                    "QLabel:disabled { color: #55585e; }")
                 label.setAlignment(align)
                 ends.addWidget(label)
-            grid.addWidget(title, 0, 0)
-            grid.addWidget(number, 0, 1)
-            grid.addWidget(slider, 1, 0, 1, 2)
-            grid.addWidget(reset, 1, 2)
-            grid.addWidget(auto_btn, 1, 3)
-            grid.addLayout(ends, 2, 0, 1, 2)
-            grid.setColumnStretch(0, 1)
+                labels.append(label)
+            grid.addWidget(check, 0, 0)
+            grid.addWidget(title, 0, 1)
+            grid.addWidget(number, 0, 2)
+            grid.addWidget(slider, 1, 1, 1, 2)
+            grid.addWidget(reset, 1, 3)
+            grid.addWidget(auto_btn, 1, 4)
+            grid.addLayout(ends, 2, 1, 1, 2)
+            grid.setColumnStretch(1, 1)
             sv.addLayout(grid)
-            sv.addSpacing(10)
+            sv.addSpacing(8)
             self.values[key], self.numbers[key], self.resets[key] = slider, number, reset
+            self.parts[key] = [title, number, slider, reset, auto_btn, *labels]
+
+        sv.addWidget(_heading("SATURATION", "(less colour ← → more colour)"))
+        rows = [("sat_all", "All colours", "#c8c8c8")] + [
+            (key, name, colour) for (key, name, _h, _r), colour in zip(SATURATION, SAT_COLOURS, strict=True)]
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(4)
+        grid.setVerticalSpacing(6)
+        for row, (key, name, colour) in enumerate(rows):
+            check = self._check(key, f"{name} saturation")
+            title, number = QLabel(name), self._number()
+            title.setMinimumWidth(70)
+            slider = self._slider(key, f"{name} saturation", ("#777777", colour))
+            reset = self._reset(key, f"{name} saturation", slider)
+            for col, w in enumerate((check, title, slider, number, reset)):
+                grid.addWidget(w, row, col)
+            self.values[key], self.numbers[key], self.resets[key] = slider, number, reset
+            self.parts[key] = [title, number, slider, reset]
+        grid.setColumnStretch(2, 1)
+        sv.addLayout(grid)
         sv.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setWidget(sliders)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFixedWidth(330)
 
         body = QHBoxLayout()
         body.addWidget(self.view, 1)
-        body.addWidget(sliders)
+        body.addWidget(scroll)
 
         foot = QHBoxLayout()
         note = "the original goes to the Recycle Bin"
@@ -264,7 +293,60 @@ class EditDialog(QDialog):
         self._timer.timeout.connect(self._render)
 
     def adjustments(self) -> Adjustments:
-        return Adjustments(**{key: s.value() for key, s in self.values.items()})
+        """What's applied (shown and saved): an unticked slider counts as 0."""
+        return Adjustments(**{key: s.value() if self.checks[key].isChecked() else 0 for key, s in self.values.items()})
+
+    def _update(self) -> None:
+        self.save_btn.setEnabled(not self.adjustments().unchanged())
+        self._timer.start()
+
+    # ---------------------------------------------------------------- building
+    def _check(self, key: str, name: str) -> QCheckBox:
+        check = QCheckBox()
+        check.setChecked(True)
+        check.setToolTip(f"Untick to see the photo without {name} (also when saving); tick to bring it back")
+        check.toggled.connect(lambda on, key=key: self._ticked(key, on))
+        self.checks[key] = check
+        return check
+
+    def _number(self) -> QLabel:
+        number = QLabel("0")
+        number.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        number.setMinimumWidth(30)
+        number.setStyleSheet("QLabel { color: palette(placeholder-text); } QLabel:disabled { color: #55585e; }")
+        return number
+
+    def _slider(self, key: str, name: str, colours: tuple[str, ...]) -> QSlider:
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(-100, 100)
+        slider.setValue(0)
+        slider.setToolTip(f"{name}: click a spot to jump there, or drag")
+        stops = ", ".join(f"stop:{i / (len(colours) - 1):.2f} {c}" for i, c in enumerate(colours))
+        slider.setStyleSheet(
+            "QSlider::groove:horizontal { height: 6px; border-radius: 3px; "
+            f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, {stops}); }}"
+            "QSlider::groove:horizontal:disabled { background: #44474d; }"
+            "QSlider::handle:horizontal { width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; "
+            "background: #e6e6e6; border: 1px solid #888888; }"
+            "QSlider::handle:horizontal:disabled { background: #6a6d73; border-color: #55585e; }")
+        make_scrubbable(slider)  # a click jumps there
+        slider.valueChanged.connect(lambda v, key=key: self._changed(key, v))
+        return slider
+
+    def _reset(self, key: str, name: str, slider: QSlider) -> QToolButton:
+        reset = QToolButton(text="↺")
+        reset.setAutoRaise(True)
+        reset.setToolTip(f"Put {name} back to 0")
+        reset.setEnabled(False)
+        reset.clicked.connect(lambda _c=False, s=slider: s.setValue(0))
+        return reset
+
+    def _ticked(self, key: str, on: bool) -> None:
+        for w in self.parts.get(key, []):
+            w.setEnabled(on)
+        if on:
+            self.resets[key].setEnabled(self.values[key].value() != 0)
+        self._update()
 
     def set_auto(self, key: str | None) -> None:
         """Auto for one slider (key) or all of them (None)."""
@@ -287,16 +369,16 @@ class EditDialog(QDialog):
 
     def _changed(self, key: str, value: int) -> None:
         self.numbers[key].setText(f"{value:+d}" if value else "0")
-        self.resets[key].setEnabled(value != 0)
-        self.save_btn.setEnabled(not self.adjustments().unchanged())
-        self._timer.start()
+        self.resets[key].setEnabled(value != 0 and self.checks[key].isChecked())
+        self._update()
 
     def _render(self) -> None:
         self.view.set_after(to_qimage(apply(self.original, self.adjustments())))
 
     def reset(self) -> None:
-        for slider in self.values.values():
+        for key, slider in self.values.items():
             slider.setValue(0)
+            self.checks[key].setChecked(True)
 
     def _show_before(self, on: bool) -> None:
         self.view.whole_before = on

@@ -110,3 +110,24 @@ def test_sliders_are_stronger():
     grey = Image.new("RGB", (1, 1), (128, 128, 128))
     r, g, b = apply(grey, Adjustments(yellow=100)).getpixel((0, 0))
     assert r - b > 70  # 0.4.0 gave about 38
+
+
+def test_saturation_per_colour():
+    import colorsys
+
+    def sat(px):
+        return colorsys.rgb_to_hsv(*[c / 255 for c in px])[1]
+
+    red, orange, blue = (200, 60, 50), (220, 130, 40), (50, 90, 200)
+    pic = Image.new("RGB", (3, 1))
+    for x, c in enumerate((red, orange, blue)):
+        pic.putpixel((x, 0), c)
+    out = apply(pic, Adjustments(sat_blue=-80))
+    assert sat(out.getpixel((2, 0))) < sat(blue) - 0.4  # blue loses its colour...
+    assert abs(sat(out.getpixel((0, 0))) - sat(red)) < 0.02  # ...red and orange don't change
+    assert abs(sat(out.getpixel((1, 0))) - sat(orange)) < 0.02
+    out = apply(pic, Adjustments(sat_all=-100))
+    assert all(sat(out.getpixel((x, 0))) < 0.02 for x in range(3))  # all colours gone: grey
+    grey = Image.new("RGB", (1, 1), (128, 128, 128))
+    assert apply(grey, Adjustments(sat_all=100)).getpixel((0, 0)) == (128, 128, 128)
+    assert not Adjustments(sat_pink=5).unchanged()

@@ -35,9 +35,33 @@ class Adjustments:
     contrast: int = 0    # Less (-) <-> More (+)
     shadows: int = 0     # Darker (-) <-> Lighter (+)
     highlights: int = 0  # Darker (-) <-> Brighter (+)
+    # Saturation, less colour (-) <-> more colour (+): all colours, then one colour each (see SATURATION).
+    sat_all: int = 0
+    sat_red: int = 0
+    sat_orange: int = 0
+    sat_yellow: int = 0
+    sat_green: int = 0
+    sat_aqua: int = 0
+    sat_blue: int = 0
+    sat_purple: int = 0
+    sat_pink: int = 0
 
     def unchanged(self) -> bool:
+        return not any(vars(self).values())
+
+    def tones_unchanged(self) -> bool:
         return not any((self.yellow, self.red, self.contrast, self.shadows, self.highlights))
+
+    def saturation_unchanged(self) -> bool:
+        return not any(v for k, v in vars(self).items() if k.startswith("sat_"))
+
+
+# The colours with a saturation slider: (field, name, hue in degrees, how far either side it reaches).
+SATURATION = [
+    ("sat_red", "Red", 0, 25), ("sat_orange", "Orange", 30, 20), ("sat_yellow", "Yellow", 55, 25),
+    ("sat_green", "Green", 120, 45), ("sat_aqua", "Aqua", 180, 30), ("sat_blue", "Blue", 220, 35),
+    ("sat_purple", "Purple", 275, 30), ("sat_pink", "Pink", 320, 30),
+]
 
 
 def can_edit(path: str) -> bool:
@@ -150,15 +174,46 @@ def auto(image: Image.Image) -> dict[str, int]:
     return out
 
 
+def saturation_table(a: Adjustments) -> list[int]:
+    """For each of Pillow's 256 hues: how much to multiply saturation by, times 127 (so 0..2 fits in 0..254)."""
+    import math
+
+    table = []
+    for h in range(256):
+        degrees = h / 256 * 360
+        gain = 1 + a.sat_all / 100
+        for key, _name, centre, reach in SATURATION:
+            amount = getattr(a, key) / 100
+            if amount:
+                distance = min(abs(degrees - centre), 360 - abs(degrees - centre))
+                if distance < reach:
+                    gain += amount * (0.5 + 0.5 * math.cos(math.pi * distance / reach))  # a smooth bump
+        table.append(max(0, min(254, round(max(0.0, min(2.0, gain)) * 127))))
+    return table
+
+
+def saturate(image: Image.Image, a: Adjustments) -> Image.Image:
+    """Per-colour saturation: in HSV, each pixel's saturation times the gain for its hue."""
+    from PIL import ImageChops
+
+    h, sat, v = image.convert("RGB").convert("HSV").split()
+    gain = h.point(saturation_table(a))
+    sat = ImageChops.multiply(sat, gain).point(lambda x: min(255, round(x * 255 / 127)))
+    return Image.merge("HSV", (h, sat, v)).convert("RGB")
+
+
 def apply(image: Image.Image, a: Adjustments) -> Image.Image:
     if a.unchanged():
         return image
-    table = lookup_table(a)
-    if image.mode == "RGBA":
-        rgb = image.convert("RGB").point(table)
-        rgb.putalpha(image.getchannel("A"))
-        return rgb
-    return image.convert("RGB").point(table)
+    alpha = image.getchannel("A") if image.mode == "RGBA" else None
+    rgb = image.convert("RGB")
+    if not a.tones_unchanged():
+        rgb = rgb.point(lookup_table(a))
+    if not a.saturation_unchanged():
+        rgb = saturate(rgb, a)
+    if alpha is not None:
+        rgb.putalpha(alpha)
+    return rgb
 
 
 def save_edit(path: str, a: Adjustments, et: "ExifTool | None" = None) -> str:
