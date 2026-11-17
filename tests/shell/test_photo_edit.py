@@ -83,4 +83,4 @@ def test_keywords_and_date_survive(tmp_path, monkeypatch):
         out = save_edit(str(src), Adjustments(shadows=40), et)
         [data] = et.read([out], READ_TAGS)
     meta = parse_meta(data)
-    assert meta.keywords == ["josh", "new york"] and meta.label == "Red" and meta.taken == taken
+    assert meta.keywords == ["josh", "new york"] and meta.label == "Red" and meta.date_taken == taken
