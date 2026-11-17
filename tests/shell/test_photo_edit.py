@@ -103,7 +103,7 @@ def test_auto_and_white_balance():
     dark = Image.linear_gradient("L").resize((64, 64)).point(lambda v: v // 3).convert("RGB")
     assert auto(dark)["shadows"] > 0
     assert auto(Image.new("RGB", (32, 32), (128, 128, 128))) == {
-        "yellow": 0, "red": 0, "contrast": 0, "shadows": 0, "highlights": 0}
+        "yellow": 0, "red": 0, "contrast": 0, "shadows": 0, "highlights": 0, "sharpness": 0, "clarity": 0}
 
 
 def test_sliders_are_stronger():
@@ -131,3 +131,33 @@ def test_saturation_per_colour():
     grey = Image.new("RGB", (1, 1), (128, 128, 128))
     assert apply(grey, Adjustments(sat_all=100)).getpixel((0, 0)) == (128, 128, 128)
     assert not Adjustments(sat_pink=5).unchanged()
+
+
+def test_sharpness_and_clarity():
+    from PIL import ImageFilter, ImageStat
+
+    from media_manager.photo_edit import auto
+
+    edge = Image.new("L", (3000, 100), 60)  # about a phone photo's width (the sharpening follows the size)
+    edge.paste(190, (100, 0, 3000, 100))
+    soft = edge.filter(ImageFilter.GaussianBlur(2)).convert("RGB")
+
+    def contrast_at_edge(im):  # how steep the edge is
+        return im.getpixel((101, 50))[0] - im.getpixel((98, 50))[0]
+
+    sharp = apply(soft, Adjustments(sharpness=80))
+    assert contrast_at_edge(sharp) > contrast_at_edge(soft)
+    assert sharp.getpixel((20, 50)) == soft.getpixel((20, 50))  # flat areas untouched
+    punch = apply(soft, Adjustments(clarity=80))
+    softer = apply(soft, Adjustments(clarity=-80))
+    spread = [ImageStat.Stat(im.crop((80, 40, 120, 60)).convert("L")).stddev[0] for im in (softer, soft, punch)]
+    assert spread[0] < spread[1] < spread[2]
+    # A cache (the Edit window's) gives the same picture.
+    cache: dict = {}
+    a = Adjustments(contrast=20, clarity=40, sharpness=30)
+    first = apply(soft, a, cache)
+    again = apply(soft, Adjustments(contrast=20, clarity=-20, sharpness=10), cache)
+    assert again.tobytes() == apply(soft, Adjustments(contrast=20, clarity=-20, sharpness=10)).tobytes()
+    assert first.tobytes() == apply(soft, a).tobytes()
+    suggested = auto(soft.resize((400, 200)))
+    assert 10 <= suggested["sharpness"] <= 40 and suggested["clarity"] in (12, 25)

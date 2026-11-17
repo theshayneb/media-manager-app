@@ -458,7 +458,10 @@ def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
     dlg2.checks["contrast"].setChecked(True)
     assert dlg2.adjustments().contrast == 40
     dlg2.reset()
-    assert all(c.isChecked() for c in dlg2.checks.values()) and len(dlg2.checks) == 14
+    assert all(c.isChecked() for c in dlg2.checks.values()) and len(dlg2.checks) == 16
+    assert dlg2.values["sharpness"].minimum() == 0 and dlg2.values["clarity"].minimum() == -100
+    dlg2.set_auto(None)
+    assert dlg2.values["sharpness"].value() == dlg2._auto["sharpness"]  # (a flat picture: 0)
     dlg2.close()
     dlg.close()
 

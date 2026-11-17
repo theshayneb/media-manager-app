@@ -35,6 +35,8 @@ class Adjustments:
     contrast: int = 0    # Less (-) <-> More (+)
     shadows: int = 0     # Darker (-) <-> Lighter (+)
     highlights: int = 0  # Darker (-) <-> Brighter (+)
+    sharpness: int = 0   # 0 (none) .. 100
+    clarity: int = 0     # Softer (-) <-> More punch (+): contrast in the mid-tones over larger areas
     # Saturation, less colour (-) <-> more colour (+): all colours, then one colour each (see SATURATION).
     sat_all: int = 0
     sat_red: int = 0
@@ -51,6 +53,9 @@ class Adjustments:
 
     def tones_unchanged(self) -> bool:
         return not any((self.yellow, self.red, self.contrast, self.shadows, self.highlights))
+
+    def detail_unchanged(self) -> bool:
+        return not (self.sharpness or self.clarity)
 
     def saturation_unchanged(self) -> bool:
         return not any(v for k, v in vars(self).items() if k.startswith("sat_"))
@@ -171,6 +176,19 @@ def auto(image: Image.Image) -> dict[str, int]:
         out["highlights"] = max(0, min(40, _slider((0.70 - x) / shape)))
     else:
         out["highlights"] = 0
+
+    # Detail, gently: a soft photo (little edge detail) gets more sharpening; a flat one a little more clarity.
+    from PIL import ImageFilter
+
+    look = image.convert("L")
+    look.thumbnail((800, 800))
+    edges = ImageStat.Stat(look.filter(ImageFilter.FIND_EDGES)).mean[0]
+    out["sharpness"] = max(10, min(40, round(45 - 2 * edges)))
+    middle = ImageStat.Stat(look, look.point(lambda v: 255 if 40 <= v <= 215 else 0)).stddev[0] \
+        if look.point(lambda v: 255 if 40 <= v <= 215 else 0).getbbox() else 0
+    out["clarity"] = 25 if middle < 35 else 12
+    if spread < 30:  # a near-flat picture is left alone
+        out["sharpness"] = out["clarity"] = 0
     return out
 
 
@@ -202,16 +220,53 @@ def saturate(image: Image.Image, a: Adjustments) -> Image.Image:
     return Image.merge("HSV", (h, sat, v)).convert("RGB")
 
 
-def apply(image: Image.Image, a: Adjustments) -> Image.Image:
+def detail(image: Image.Image, a: Adjustments, cache: dict | None = None) -> Image.Image:
+    """Clarity and Sharpness. Their sizes follow the picture's size, so the screen-sized preview looks like
+    the full-size photo it's saved as (about 1.3 px sharpening on a 4032 px phone photo). cache keeps the
+    blurred copy and the mid-tone mask between previews while only these two sliders move."""
+    import math
+
+    from PIL import ImageFilter
+
+    cache = cache if cache is not None else {}
+    long_side = max(image.size)
+    if a.clarity:
+        if "blur" not in cache:
+            cache["blur"] = image.filter(ImageFilter.GaussianBlur(max(4.0, long_side / 60)))
+            cache["mids"] = image.convert("L").point(lambda v: round(255 * math.sin(math.pi * v / 255)))
+        # Away from the blurred copy = more local contrast (punch); towards it = softer. Mid-tones only.
+        amount = a.clarity / 100 * (0.6 if a.clarity > 0 else 0.5)
+        moved = Image.blend(cache["blur"], image, 1 + amount) if amount > 0 else \
+            Image.blend(image, cache["blur"], -amount)
+        image = Image.composite(moved, image, cache["mids"])
+    if a.sharpness:
+        radius = max(0.5, long_side / 3000)
+        image = image.filter(ImageFilter.UnsharpMask(radius=radius, percent=round(a.sharpness * 2.5), threshold=2))
+    return image
+
+
+def apply(image: Image.Image, a: Adjustments, cache: dict | None = None) -> Image.Image:
+    """All the adjustments. cache (the Edit window's) keeps the work before Clarity/Sharpness while only
+    those move, so dragging them stays quick."""
     if a.unchanged():
         return image
     alpha = image.getchannel("A") if image.mode == "RGBA" else None
-    rgb = image.convert("RGB")
-    if not a.tones_unchanged():
-        rgb = rgb.point(lookup_table(a))
-    if not a.saturation_unchanged():
-        rgb = saturate(rgb, a)
+    key = tuple(v for k, v in vars(a).items() if k not in ("sharpness", "clarity"))
+    if cache is not None and cache.get("key") == key and cache.get("source") is image:
+        rgb = cache["base"]
+    else:
+        rgb = image.convert("RGB")
+        if not a.tones_unchanged():
+            rgb = rgb.point(lookup_table(a))
+        if not a.saturation_unchanged():
+            rgb = saturate(rgb, a)
+        if cache is not None:
+            cache.clear()
+            cache.update(key=key, source=image, base=rgb)
+    if not a.detail_unchanged():
+        rgb = detail(rgb, a, cache)
     if alpha is not None:
+        rgb = rgb.copy()
         rgb.putalpha(alpha)
     return rgb
 

@@ -39,6 +39,10 @@ SLIDERS = [
     ("shadows", "Shadows", "Darker", "Lighter", ("#111111", "#888888")),
     ("highlights", "Highlights", "Darker", "Brighter", ("#666666", "#eeeeee")),
 ]
+DETAIL = [
+    ("sharpness", "Sharpness", "None", "More", ("#555555", "#bbbbbb")),
+    ("clarity", "Clarity", "Softer", "More punch", ("#666666", "#cccccc")),
+]
 
 
 def to_qimage(image: Image.Image) -> QImage:
@@ -191,42 +195,12 @@ class EditDialog(QDialog):
         sv.addWidget(self.pick_hint)
         self.view.picked.connect(self._picked)
 
-        sv.addWidget(_heading("LIGHT & COLOUR"))
-        for key, name, left, right, colours in SLIDERS:
-            grid = QGridLayout()
-            grid.setVerticalSpacing(2)
-            grid.setHorizontalSpacing(4)
-            check = self._check(key, name)
-            title, number = QLabel(name), self._number()
-            slider = self._slider(key, name, colours)
-            reset = self._reset(key, name, slider)
-            auto_btn = QToolButton(text="A")
-            auto_btn.setAutoRaise(True)
-            auto_btn.setToolTip(f"Auto: set {name} from the photo")
-            auto_btn.clicked.connect(lambda _c=False, key=key: self.set_auto(key))
-            ends = QHBoxLayout()
-            labels = []
-            for text, align in ((left, Qt.AlignmentFlag.AlignLeft), (right, Qt.AlignmentFlag.AlignRight)):
-                label = QLabel(text)
-                label.setStyleSheet("QLabel { color: palette(placeholder-text); font-size: 11px; }"
-                                    "QLabel:disabled { color: #55585e; }")
-                label.setAlignment(align)
-                ends.addWidget(label)
-                labels.append(label)
-            grid.addWidget(check, 0, 0)
-            grid.addWidget(title, 0, 1)
-            grid.addWidget(number, 0, 2)
-            grid.addWidget(slider, 1, 1, 1, 2)
-            grid.addWidget(reset, 1, 3)
-            grid.addWidget(auto_btn, 1, 4)
-            grid.addLayout(ends, 2, 1, 1, 2)
-            grid.setColumnStretch(1, 1)
-            sv.addLayout(grid)
-            sv.addSpacing(8)
-            self.values[key], self.numbers[key], self.resets[key] = slider, number, reset
-            self.parts[key] = [title, number, slider, reset, auto_btn, *labels]
+        for heading, rows in (("LIGHT & COLOUR", SLIDERS), ("DETAIL", DETAIL)):
+            sv.addWidget(_heading(heading))
+            self._big_rows(sv, rows)
 
         sv.addWidget(_heading("SATURATION", "(less colour ← → more colour)"))
+
         rows = [("sat_all", "All colours", "#c8c8c8")] + [
             (key, name, colour) for (key, name, _h, _r), colour in zip(SATURATION, SAT_COLOURS, strict=True)]
         grid = QGridLayout()
@@ -287,6 +261,7 @@ class EditDialog(QDialog):
         layout.addLayout(foot)
 
         self._auto: dict[str, int] | None = None
+        self._cache: dict = {}  # the preview's work before Clarity/Sharpness (see photo_edit.apply)
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(25)
@@ -301,6 +276,44 @@ class EditDialog(QDialog):
         self._timer.start()
 
     # ---------------------------------------------------------------- building
+    def _big_rows(self, sv: QVBoxLayout, rows: list) -> None:
+        """Light & colour and Detail: checkbox, name, value; slider with ↺ and A; its two ends below."""
+        for key, name, left, right, colours in rows:
+            grid = QGridLayout()
+            grid.setVerticalSpacing(2)
+            grid.setHorizontalSpacing(4)
+            check = self._check(key, name)
+            title, number = QLabel(name), self._number()
+            slider = self._slider(key, name, colours)
+            if key == "sharpness":
+                slider.setRange(0, 100)  # no "less sharp" end
+            reset = self._reset(key, name, slider)
+            auto_btn = QToolButton(text="A")
+            auto_btn.setAutoRaise(True)
+            auto_btn.setToolTip(f"Auto: set {name} from the photo")
+            auto_btn.clicked.connect(lambda _c=False, key=key: self.set_auto(key))
+            ends = QHBoxLayout()
+            labels = []
+            for text, align in ((left, Qt.AlignmentFlag.AlignLeft), (right, Qt.AlignmentFlag.AlignRight)):
+                label = QLabel(text)
+                label.setStyleSheet("QLabel { color: palette(placeholder-text); font-size: 11px; }"
+                                    "QLabel:disabled { color: #55585e; }")
+                label.setAlignment(align)
+                ends.addWidget(label)
+                labels.append(label)
+            grid.addWidget(check, 0, 0)
+            grid.addWidget(title, 0, 1)
+            grid.addWidget(number, 0, 2)
+            grid.addWidget(slider, 1, 1, 1, 2)
+            grid.addWidget(reset, 1, 3)
+            grid.addWidget(auto_btn, 1, 4)
+            grid.addLayout(ends, 2, 1, 1, 2)
+            grid.setColumnStretch(1, 1)
+            sv.addLayout(grid)
+            sv.addSpacing(8)
+            self.values[key], self.numbers[key], self.resets[key] = slider, number, reset
+            self.parts[key] = [title, number, slider, reset, auto_btn, *labels]
+
     def _check(self, key: str, name: str) -> QCheckBox:
         check = QCheckBox()
         check.setChecked(True)
@@ -373,7 +386,7 @@ class EditDialog(QDialog):
         self._update()
 
     def _render(self) -> None:
-        self.view.set_after(to_qimage(apply(self.original, self.adjustments())))
+        self.view.set_after(to_qimage(apply(self.original, self.adjustments(), self._cache)))
 
     def reset(self) -> None:
         for key, slider in self.values.items():

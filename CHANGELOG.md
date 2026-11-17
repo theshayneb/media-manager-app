@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.3
+
+- Edit window: a DETAIL section with Sharpness (none → more) and Clarity (softer ← → more punch: contrast in
+  the mid-tones over larger areas, for texture, clouds and fabric). Each has its checkbox, ↺ and A; Auto all
+  sets a gentle, print-friendly amount of both. Their size follows the photo's, so the preview matches the
+  saved full-size photo; dragging them stays quick.
+
 ## 0.4.2
 
 - Edit window: a checkbox on the left of every slider. Untick it to see the photo as if that slider had never
