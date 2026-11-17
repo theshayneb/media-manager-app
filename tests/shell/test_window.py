@@ -458,12 +458,48 @@ def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
     dlg2.checks["contrast"].setChecked(True)
     assert dlg2.adjustments().contrast == 40
     dlg2.reset()
-    assert all(c.isChecked() for c in dlg2.checks.values()) and len(dlg2.checks) == 16
+    assert all(c.isChecked() for c in dlg2.checks.values()) and len(dlg2.checks) == 17
     assert dlg2.values["sharpness"].minimum() == 0 and dlg2.values["clarity"].minimum() == -100
     dlg2.set_auto(None)
     assert dlg2.values["sharpness"].value() == dlg2._auto["sharpness"]  # (a flat picture: 0)
+    # The mouse wheel zooms; Shift+E closes (asking first when there are changes).
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QWheelEvent
+
+    view = dlg2.view
+    view.resize(400, 300)
+    wheel = QWheelEvent(QPointF(200, 150), QPointF(200, 150), QPoint(0, 0), QPoint(0, 360),
+                        Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
+    view.wheelEvent(wheel)
+    assert view.zoom.zoomed and view.picture_rect().width() > view.fitted_rect().width()
+    dlg2.reset()
+    dlg2.close_with_shortcut()
+    assert dlg2.result() == 0  # nothing changed: just closed
+    dlg2.values["brightness"].setValue(30)
+    from PySide6.QtWidgets import QMessageBox
+
+    answers = []
+    monkeypatch.setattr(QMessageBox, "exec", lambda box: answers.append(box.text()))
+    monkeypatch.setattr(QMessageBox, "clickedButton", lambda box: box.buttons()[0])  # "Save"
+    dlg2.close_with_shortcut()
+    assert answers and "Save the edit?" in answers[0] and dlg2.result() == 1
     dlg2.close()
     dlg.close()
+
+    # The big preview zooms with the wheel too (patched in at start-up).
+    from photo_manager.ui.preview import CropCanvas
+
+    canvas = CropCanvas()
+    canvas.resize(400, 300)
+    from PySide6.QtGui import QPixmap
+
+    pix = QPixmap(800, 600)
+    canvas.set_image(pix, (800, 600))
+    fitted = canvas._target().width()
+    canvas.wheelEvent(wheel)
+    assert canvas._target().width() > fitted
+    canvas.set_image(pix, (800, 600))  # another photo: fitted again
+    assert canvas._target().width() == fitted
 
     # The tray: minimizing hides the window when the tray is there; the menu's tick turns it off.
     hidden = []

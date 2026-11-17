@@ -29,12 +29,14 @@ from photo_manager.core.thumbs import open_image
 
 from .photo_edit import SATURATION, SAVED_AS_JPG, Adjustments, apply, auto, white_balance_at
 from .scrub import make_scrubbable
+from .zoom import Zoom, notches
 
 PREVIEW_PIXELS = 2400  # sharp enough for a maximized window
 # (attribute, name, left end, right end, groove colours left -> right)
 SLIDERS = [
     ("yellow", "Blue ↔ Yellow", "Bluer", "Yellower", ("#3b78d8", "#777777", "#d8b83b")),
     ("red", "Green ↔ Red", "Greener", "Redder", ("#3bb85a", "#777777", "#d84a3b")),
+    ("brightness", "Brightness", "Darker", "Brighter", ("#222222", "#dddddd")),
     ("contrast", "Contrast", "Less", "More", ("#555555", "#999999")),
     ("shadows", "Shadows", "Darker", "Lighter", ("#111111", "#888888")),
     ("highlights", "Highlights", "Darker", "Brighter", ("#666666", "#eeeeee")),
@@ -71,6 +73,8 @@ class CompareView(QWidget):
         self.before, self.after = before, before
         self.split = 0.0          # where the line is, across the picture: starts at the left (all After)
         self.picking = False
+        self.zoom = Zoom()        # mouse wheel; while zoomed in, drag (away from the line) to look around
+        self._moving_line = False
         self.whole_before = False  # "Hold for Before"
         self.setMinimumSize(360, 240)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -80,20 +84,33 @@ class CompareView(QWidget):
         self.after = image
         self.update()
 
-    def picture_rect(self) -> QRectF:
+    def fitted_rect(self) -> QRectF:
         size = self.before.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
         rect = QRectF(0, 0, size.width(), size.height())
         rect.moveCenter(QRectF(self.rect()).center())
         return rect
+
+    def picture_rect(self) -> QRectF:
+        return self.zoom.rect(self.fitted_rect(), QRectF(self.rect()))
+
+    def wheelEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        if self.zoom.wheel(notches(event), event.position(), self.fitted_rect(), QRectF(self.rect())):
+            self.update()
+        event.accept()
+
+    def _line_x(self) -> float:
+        rect = self.picture_rect()
+        return max(rect.left() + 1, rect.left() + rect.width() * self.split)
 
     def paintEvent(self, _event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         p = QPainter(self)
         p.fillRect(self.rect(), QColor("#1b1c1f"))
         rect = self.picture_rect()
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        seen = rect.intersected(QRectF(self.rect()))  # the part on screen (all of it unless zoomed in)
         if self.whole_before:
             p.drawImage(rect, self.before)
-            self._caption(p, rect, "Before", left=True)
+            self._caption(p, seen, "Before", left=True)
             return
         p.drawImage(rect, self.after)
         x = rect.left() + rect.width() * self.split
@@ -102,19 +119,20 @@ class CompareView(QWidget):
             p.setClipRect(QRectF(rect.left(), rect.top(), x - rect.left(), rect.height()))
             p.drawImage(rect, self.before)
             p.restore()
-            self._caption(p, rect, "Before", left=True)
+            if x > seen.left() + 60:
+                self._caption(p, seen, "Before", left=True)
         if self.split < 1:
-            self._caption(p, rect, "After", left=False)
-        if self.split < 1:  # the line, also at the very left (so it can be found and dragged)
+            self._caption(p, seen, "After", left=False)
+        if self.split < 1 and seen.left() - 1 <= x <= seen.right() + 1:  # the line, also at the very left
             x = max(x, rect.left() + 1)
             p.setPen(QPen(QColor("white"), 2))
-            p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+            p.drawLine(QPointF(x, seen.top()), QPointF(x, seen.bottom()))
             p.setBrush(QColor("white"))
             p.setPen(Qt.PenStyle.NoPen)
-            hx = min(max(x, rect.left() + 14), rect.right() - 14)  # the handle stays whole at the edges
-            p.drawEllipse(QPointF(hx, rect.center().y()), 13, 13)
+            hx = min(max(x, seen.left() + 14), seen.right() - 14)  # the handle stays whole at the edges
+            p.drawEllipse(QPointF(hx, seen.center().y()), 13, 13)
             p.setPen(QColor("#222222"))
-            p.drawText(QRectF(hx - 13, rect.center().y() - 13, 26, 26), Qt.AlignmentFlag.AlignCenter, "⇔")
+            p.drawText(QRectF(hx - 13, seen.center().y() - 13, 26, 26), Qt.AlignmentFlag.AlignCenter, "⇔")
 
     def _caption(self, p: QPainter, rect: QRectF, text: str, left: bool) -> None:
         font = QFont(self.font())
@@ -147,11 +165,28 @@ class CompareView(QWidget):
             if rect.contains(pos):
                 self.picked.emit((pos.x() - rect.left()) / rect.width(), (pos.y() - rect.top()) / rect.height())
             return
-        self._move_line(event.position().x())
+        x = event.position().x()
+        if self.zoom.zoomed and abs(x - self._line_x()) > 14:  # zoomed in, away from the line: look around
+            self.zoom.start_pan(event.position())
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            return
+        self._moving_line = True
+        self._move_line(x)
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if event.buttons() & Qt.MouseButton.LeftButton and not self.picking:
+        if not event.buttons() & Qt.MouseButton.LeftButton or self.picking:
+            return
+        if self.zoom.panning:
+            self.zoom.pan(event.position(), self.fitted_rect(), QRectF(self.rect()))
+            self.update()
+        elif self._moving_line:
             self._move_line(event.position().x())
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        if self.zoom.panning:
+            self.zoom.end_pan()
+            self.set_picking(self.picking)  # back to its usual pointer
+        self._moving_line = False
 
 
 class EditDialog(QDialog):
@@ -397,7 +432,28 @@ class EditDialog(QDialog):
         self.view.whole_before = on
         self.view.update()
 
+    def close_with_shortcut(self) -> None:
+        """Shift+E (the key that opened it) closes it; with changes, it asks first."""
+        from PySide6.QtWidgets import QMessageBox
+
+        if self.adjustments().unchanged():
+            self.reject()
+            return
+        box = QMessageBox(QMessageBox.Icon.Question, "Edit photo", "Save the edit?", parent=self)
+        save = box.addButton("Save", QMessageBox.ButtonRole.AcceptRole)
+        discard = box.addButton("Don't save", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Keep editing", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(save)
+        box.exec()
+        if box.clickedButton() is save:
+            self.accept()
+        elif box.clickedButton() is discard:
+            self.reject()
+
     def keyPressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        if event.key() == Qt.Key.Key_E and event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+            self.close_with_shortcut()
+            return
         if event.key() == Qt.Key.Key_Space:
             if not event.isAutoRepeat():
                 self._show_before(True)

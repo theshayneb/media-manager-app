@@ -103,7 +103,8 @@ def test_auto_and_white_balance():
     dark = Image.linear_gradient("L").resize((64, 64)).point(lambda v: v // 3).convert("RGB")
     assert auto(dark)["shadows"] > 0
     assert auto(Image.new("RGB", (32, 32), (128, 128, 128))) == {
-        "yellow": 0, "red": 0, "contrast": 0, "shadows": 0, "highlights": 0, "sharpness": 0, "clarity": 0}
+        "yellow": 0, "red": 0, "contrast": 0, "shadows": 0, "highlights": 0, "sharpness": 0, "clarity": 0,
+        "brightness": 0}
 
 
 def test_sliders_are_stronger():
@@ -161,3 +162,14 @@ def test_sharpness_and_clarity():
     assert first.tobytes() == apply(soft, a).tobytes()
     suggested = auto(soft.resize((400, 200)))
     assert 10 <= suggested["sharpness"] <= 40 and suggested["clarity"] in (12, 25)
+
+
+def test_brightness():
+    from media_manager.photo_edit import auto
+
+    grey = Image.new("RGB", (1, 1), (100, 100, 100))
+    values = [apply(grey, Adjustments(brightness=b)).getpixel((0, 0))[0] for b in (-60, 0, 60)]
+    assert values[0] < 100 < values[2]
+    assert apply(Image.new("RGB", (1, 1), (0, 0, 0)), Adjustments(brightness=100)).getpixel((0, 0)) == (0, 0, 0)
+    dark = Image.linear_gradient("L").resize((64, 64)).point(lambda v: v // 3).convert("RGB")
+    assert auto(dark)["brightness"] > 0

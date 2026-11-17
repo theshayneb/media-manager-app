@@ -29,8 +29,10 @@ def build_window():  # type: ignore[no-untyped-def]
     music_settings = MusicSettings.load()
     apply_theme(music_settings.theme)
     from .scrub import patch_photo_videos
+    from .zoom import patch_preview
 
     patch_photo_videos()  # before Photo Manager's video player is made
+    patch_preview()  # mouse-wheel zoom in the big preview
     photos = PhotoWindow(photo_settings, start_exiftool(photo_settings))
     music = MusicWindow(music_settings)
     return MediaWindow(MediaSettings.load(), photos, music)

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.4
+
+- Edit window: a Brightness slider (darker ← → brighter mid-tones; black and white stay put), with its
+  checkbox, ↺ and A (Auto all includes it).
+- Mouse-wheel zoom, towards the pointer, in the Edit window and in Photos' big preview. While zoomed in, drag
+  to look around (in the Edit window, drag near the line to move the line).
+- Shift+E also closes the Edit window (it asks "Save the edit?" if you changed anything).
+
 ## 0.4.3
 
 - Edit window: a DETAIL section with Sharpness (none → more) and Clarity (softer ← → more punch: contrast in

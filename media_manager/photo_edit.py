@@ -31,6 +31,7 @@ class Adjustments:
     """Each from -100 to 100; 0 = unchanged."""
 
     yellow: int = 0      # Blue (-) <-> Yellow (+)
+    brightness: int = 0  # Darker (-) <-> Brighter (+): the mid-tones; black and white stay put
     red: int = 0         # Green (-) <-> Red (+)
     contrast: int = 0    # Less (-) <-> More (+)
     shadows: int = 0     # Darker (-) <-> Lighter (+)
@@ -52,7 +53,7 @@ class Adjustments:
         return not any(vars(self).values())
 
     def tones_unchanged(self) -> bool:
-        return not any((self.yellow, self.red, self.contrast, self.shadows, self.highlights))
+        return not any((self.yellow, self.red, self.brightness, self.contrast, self.shadows, self.highlights))
 
     def detail_unchanged(self) -> bool:
         return not (self.sharpness or self.clarity)
@@ -78,6 +79,7 @@ WARM = (0.20, 0.12, -0.40)    # red, green, blue change at Yellow +100
 TINT = (0.30, -0.24, 0.0)     # at Red +100
 CONTRAST_UP, CONTRAST_DOWN = 1.2, 0.8
 LIFT = 0.7                    # shadows / highlights
+BRIGHTNESS = 0.8              # at +100 the mid-tones' curve is x ** 0.57
 
 
 def channel_gains(yellow: float, red: float) -> tuple[float, float, float]:
@@ -95,6 +97,8 @@ def lookup_table(a: Adjustments) -> list[int]:
     for gain in gains:
         for v in range(256):
             x = min(1.0, v / 255 * gain)
+            if a.brightness:
+                x = x ** (2 ** (-BRIGHTNESS * a.brightness / 100))  # a curve: brighter/darker mid-tones
             x += shadows * (1 - x) ** 2 * (1 - (1 - x) ** 6)  # the dark part, not pure black
             x += highlights * x ** 2 * (1 - x ** 6)            # the bright part, not pure white
             x = (x - 0.5) * contrast + 0.5
@@ -162,6 +166,16 @@ def auto(image: Image.Image) -> dict[str, int]:
     spread = high - low
     factor = max(0.7, min(1.5, 235 / spread)) if spread >= 30 else 1.0  # a near-flat picture is left alone
     out["contrast"] = _slider((factor - 1) / (CONTRAST_UP if factor >= 1 else CONTRAST_DOWN))
+
+    # Brightness, gently: the middle of the photo should come out a little below middle grey.
+    import math
+
+    middle = _percentile(hist, 0.5) / 255
+    if spread >= 30 and 0.02 < middle < 0.98:
+        exponent = math.log(0.45) / math.log(middle)
+        out["brightness"] = max(-60, min(60, _slider(-math.log2(exponent) / BRIGHTNESS * 0.7)))
+    else:
+        out["brightness"] = 0
 
     x = _percentile(hist, 0.10) / 255
     shape = LIFT * (1 - x) ** 2 * (1 - (1 - x) ** 6)
