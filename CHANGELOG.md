@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+- Photos: Edit (button after Convert, Shift+E, or right-click → Edit…). Five sliders: Blue ↔ Yellow,
+  Green ↔ Red, Contrast, Shadows, Highlights. The photo shows the original left of a line and the edit right
+  of it (drag the line); hold "Hold for Before" or the space bar to see the whole original. Save replaces the
+  photo, keeping its date taken, keywords, labels and other details; the original goes to the Recycle Bin.
+  HEIC photos are saved as JPG.
+- Minimize to the tray: the minimize button hides Media Manager to the tray; click the icon to bring it back.
+  Right-click the icon for Show, a "Minimize to the tray" tick (to turn it off) and Quit.
+- No pop-up after a Steam import (the status bar says how many were imported).
+
 ## 0.3.2
 
 - Music: the check-up no longer shows "Kept this week".

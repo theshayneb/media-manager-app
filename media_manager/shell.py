@@ -6,9 +6,10 @@ are, with their own settings), Movies & TV is new.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
-from PySide6.QtCore import QByteArray, Qt, QTimer
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import QByteArray, QEvent, Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QIcon
 from PySide6.QtWidgets import (
     QDockWidget,
     QListWidget,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QStackedWidget,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -100,6 +102,8 @@ class MediaWindow(QMainWindow):
             self.photo_tree.toggleViewAction().setVisible(False)
 
         scrub.install(self.music, self.movies)  # drag along any timeline to scrub
+        self.photos.quiet_steam_import = True  # no pop-up after a Steam import (the status bar says it)
+        self._build_tray()
         # The same top-bar layout in every section.
         self.music_folder = bars.music_bar(self.music, self)
         self.photo_folder, self.photo_search = bars.photo_bar(self.photos)
@@ -359,6 +363,56 @@ class MediaWindow(QMainWindow):
         if not menu.isEmpty():
             menu.exec(self.list.mapToGlobal(pos))
 
+    # ------------------------------------------------------------ the tray
+    def _build_tray(self) -> None:
+        """The icon by the clock: minimizing hides the window there (click the icon to bring it back)."""
+        icon = QIcon(str(Path(__file__).resolve().parent / "assets" / "icon.png"))
+        self.tray = QSystemTrayIcon(icon, self)
+        self.tray.setToolTip("Media Manager")
+        menu = QMenu(self)
+        show = menu.addAction("Show Media Manager", self.show_from_tray)
+        font = show.font()
+        font.setBold(True)
+        show.setFont(font)
+        menu.addSeparator()
+        self.tray_toggle = menu.addAction("Minimize to the tray")
+        self.tray_toggle.setCheckable(True)
+        self.tray_toggle.setChecked(self.media.minimize_to_tray)
+        self.tray_toggle.toggled.connect(lambda on: setattr(self.media, "minimize_to_tray", on))
+        menu.addSeparator()
+        menu.addAction("Quit", self.quit_app)
+        self.tray.setContextMenu(menu)
+        self.tray.activated.connect(self._tray_clicked)
+        self._was_maximized = False
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray.show()
+
+    def quit_app(self) -> None:
+        """Quit, also while hidden in the tray (closing a hidden window doesn't end the app by itself)."""
+        from PySide6.QtWidgets import QApplication
+
+        if self.close():
+            QApplication.instance().quit()
+
+    def _tray_clicked(self, reason) -> None:  # type: ignore[no-untyped-def]
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+            self.show_from_tray()
+
+    def show_from_tray(self) -> None:
+        if self._was_maximized:
+            self.showMaximized()
+        else:
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def changeEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+            self._was_maximized = bool(event.oldState() & Qt.WindowState.WindowMaximized)
+            if self.media.minimize_to_tray and self.tray.isVisible():
+                QTimer.singleShot(0, self.hide)  # off the taskbar; the tray icon brings it back
+
     # ------------------------------------------------------------ closing
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         self.media.window_geometry = bytes(self.saveGeometry().toBase64()).decode()
@@ -370,4 +424,5 @@ class MediaWindow(QMainWindow):
             self.media.save()
         except OSError:
             pass
+        self.tray.hide()
         super().closeEvent(event)

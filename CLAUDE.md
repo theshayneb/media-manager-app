@@ -17,6 +17,9 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   has none of it (`_fill_cache`).
 - `scrub.py`: every timeline slider jumps to a click and follows a drag (a QProxyStyle per slider; Photos'
   VideoView is patched before Photo Manager's window is built).
+- `photo_edit.py` (curves per channel, saved like Photo Manager's crop: tags copied with ExifTool, original
+  to the Recycle Bin, HEIC → JPG) and `edit_dialog.py` (split-line compare + Hold for Before; user's "A and C").
+  Photo Manager's right-click menu has one hook for it: `extra_menu_items`. Tray: `MediaWindow._build_tray`.
 - Each part keeps its own settings file, so the user's existing Photo/Music settings carry over.
 - Tests: `python -m pytest` (`tests/photo`, `tests/music`, `tests/shell`); GUI tests run offscreen.
   ffmpeg in `vendor/ffmpeg` or on PATH, ExifTool in `vendor/exiftool`.

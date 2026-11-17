@@ -1276,6 +1276,9 @@ class MainWindow(QMainWindow):
         add("Crop…", self.crop_current, "", single and item.kind == "image" and can_crop(item.path))
         add("Convert to JPG…", self.convert_selected, "",
             any(needs_conversion(p, "JPG") for p in paths))
+        # Media Manager adds its own entries here (Edit…).
+        for text, slot, shortcut, enabled in getattr(self, "extra_menu_items", lambda _paths: [])(paths):
+            add(text, slot, shortcut, enabled)
         labels = menu.addMenu("Labels")
         keys = self.settings.label_hotkeys
         entries = [(label, label, lambda name=label: self._label_shortcut(name)) for label in LABELS]

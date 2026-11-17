@@ -27,6 +27,7 @@ class MediaSettings:
     last_kind: str = "music"      # photos | music | movies
     last_key: str = ""            # the entry of the Folders list that was open
     movie_volume: int = 70
+    minimize_to_tray: bool = True  # the minimize button hides the window to the tray
     window_geometry: str = ""
     dock_sizes: dict = field(default_factory=dict)        # panel name -> its width (or height)
     photo_collapsed: dict = field(default_factory=dict)   # "<folder>|<group by>" -> collapsed group titles

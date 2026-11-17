@@ -375,3 +375,62 @@ def test_steam_import_kept_this_week_and_flat_bars(tmp_path):
         bar = next(b for b in part.findChildren(QToolBar) if not b.isHidden())
         assert "border: none" in bar.styleSheet()  # no line along the top edge
     win.close()
+
+
+def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
+    from PIL import Image
+    from PySide6.QtGui import QWindowStateChangeEvent
+
+    from media_manager.edit_dialog import EditDialog
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+
+    _music_folders(tmp_path)
+    win = build_window()
+    photos = _bar_texts(win.photos)
+    assert photos.index("Convert") < photos.index("Edit") < photos.index("Steam import")
+    from PySide6.QtGui import QAction
+
+    edit = next(a for a in win.photos.findChildren(QAction) if a.iconText() == "Edit")
+    assert edit.shortcut().toString() == "Shift+E"
+    assert win.photos.quiet_steam_import is True
+    menu = win.photos.extra_menu_items([str(tmp_path / "a.jpg")])
+    assert menu[0][0] == "Edit…" and menu[0][3]
+
+    # The Edit window: sliders change the right-hand side; Hold for Before shows the original.
+    pic = tmp_path / "a.jpg"
+    Image.new("RGB", (80, 60), (128, 128, 128)).save(pic)
+    dlg = EditDialog(str(pic))
+    assert not dlg.save_btn.isEnabled()
+    dlg.values["yellow"].setValue(50)
+    dlg._render()
+    assert dlg.save_btn.isEnabled() and dlg.numbers["yellow"].text() == "+50"
+    after = dlg.view.after.pixelColor(10, 10)
+    assert after.blue() < after.red()
+    dlg.before_btn.pressed.emit()
+    assert dlg.view.whole_before
+    dlg.before_btn.released.emit()
+    assert not dlg.view.whole_before
+    dlg.view.resize(400, 300)
+    dlg.view._move_line(dlg.view.picture_rect().left() + dlg.view.picture_rect().width() * 0.25)
+    assert abs(dlg.view.split - 0.25) < 0.02
+    dlg.reset()
+    assert dlg.adjustments().unchanged() and not dlg.save_btn.isEnabled()
+    dlg.close()
+
+    # The tray: minimizing hides the window when the tray is there; the menu's tick turns it off.
+    hidden = []
+    monkeypatch.setattr(win.tray, "isVisible", lambda: True)
+    monkeypatch.setattr(win, "hide", lambda: hidden.append(True))
+    monkeypatch.setattr(win, "isMinimized", lambda: True)
+    win.changeEvent(QWindowStateChangeEvent(Qt.WindowState.WindowNoState))
+    _wait(lambda: bool(hidden), 1.0)
+    assert hidden
+    win.tray_toggle.setChecked(False)
+    assert win.media.minimize_to_tray is False
+    hidden.clear()
+    win.changeEvent(QWindowStateChangeEvent(Qt.WindowState.WindowNoState))
+    _wait(lambda: False, 0.2)
+    assert not hidden
+    win.close()

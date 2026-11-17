@@ -13,7 +13,7 @@ import os
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
     QInputDialog,
@@ -292,6 +292,16 @@ def photo_bar(photos) -> tuple[FolderButton, QLineEdit]:  # type: ignore[no-unty
     photos.address.textChanged.connect(folder.set_path)
     folder.set_path(photos.address.text())
 
+    from .photo_edit import can_edit, edit_selected
+
+    edit = QAction("Edit", photos)
+    edit.setShortcut(QKeySequence("Shift+E"))
+    edit.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+    edit.setToolTip("Edit: colour balance, contrast, shadows and highlights (Shift+E)")
+    edit.triggered.connect(lambda: edit_selected(photos))
+    photos.extra_menu_items = lambda paths: [
+        ("Edit…", lambda: edit_selected(photos), "Shift+E", len(paths) == 1 and can_edit(paths[0]))]
+
     search = QLineEdit()
     search.setPlaceholderText("Search names…")
     search.setClearButtonEnabled(True)
@@ -303,7 +313,7 @@ def photo_bar(photos) -> tuple[FolderButton, QLineEdit]:  # type: ignore[no-unty
     steam = texts.get("Steam import…")
     if steam is not None:
         label_as(steam, "Steam import")  # its button, between Convert and Open (the user's request)
-    items = [texts.get("View"), texts.get("Convert"), steam, texts.get("Open"), "|",
+    items = [texts.get("View"), texts.get("Convert"), edit, steam, texts.get("Open"), "|",
              rename, texts.get("Move to"), texts.get("Delete"), texts.get("Show in Explorer"), "|",
              search, label("Sort:"), photos.sort_combo, label("Group:"), photos.group_combo, photos.filter_btn,
              label("Size:"), slider, spacer(), folder, photos.fav_action, view_btn, refresh, gear]
