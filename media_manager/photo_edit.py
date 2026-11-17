@@ -18,6 +18,7 @@ from PIL import Image, ImageOps
 from photo_manager.core import thumbs  # noqa: F401  (registers the HEIC opener)
 from photo_manager.core.crop import _flatten, _save_params
 from photo_manager.core.fileops import unique_path
+from photo_manager.core.metadata import EDITED_MARK
 
 if TYPE_CHECKING:
     from photo_manager.core.exiftool import ExifTool
@@ -295,6 +296,11 @@ def save_edit(path: str, a: Adjustments, et: "ExifTool | None" = None) -> str:
         upright = ImageOps.exif_transpose(src)  # before _save_params resets Orientation
         out_fmt = "JPEG" if as_jpg else {"MPO": "JPEG"}.get(src_fmt, src_fmt) or "PNG"
         params = _save_params(out_fmt, src)
+        exif = src.getexif()
+        exif[0x0112] = 1
+        exif[0x000B] = EDITED_MARK  # ProcessingSoftware (ExifTool writes it again below, after copying tags)
+        if out_fmt in ("JPEG", "PNG", "WEBP"):
+            params["exif"] = exif.tobytes()
     image = apply(upright, a)
     if out_fmt == "JPEG":
         image = _flatten(image)
@@ -307,6 +313,7 @@ def save_edit(path: str, a: Adjustments, et: "ExifTool | None" = None) -> str:
                 "-TagsFromFile", path, "-all:all", "-unsafe", "-icc_profile",
                 "-FileCreateDate<FileCreateDate", "-FileModifyDate<FileModifyDate",
                 "-Orientation#=1", f"-ExifImageWidth={image.width}", f"-ExifImageHeight={image.height}",
+                f"-EXIF:ProcessingSoftware={EDITED_MARK}",  # the ✨ in Photos' corner
                 "-ThumbnailImage=", "-PreviewImage=",
             ])
             if error and "Nothing to do" not in error:

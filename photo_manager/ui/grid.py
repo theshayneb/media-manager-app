@@ -461,15 +461,30 @@ def emoji_font(pixel_size: int) -> QFont:
 
 
 def paint_flags(painter: QPainter, target: QRect, meta: Meta | None, scale: float = 1.0) -> None:
-    """⭐ for Star and 🔖 for Bookmark (the same emoji as the Labels buttons), top-left."""
-    if meta is None or not (meta.starred or meta.bookmarked):
+    """⭐ for Star and 🔖 for Bookmark (the same emoji as the Labels buttons), top-left;
+    ✨ bottom-right on a photo saved from Media Manager's Edit window."""
+    if meta is None:
         return
     from PySide6.QtCore import QRectF
 
-    icons = (["⭐"] if meta.starred else []) + (["🔖"] if meta.bookmarked else [])
     s = scale
     size = 18 * s
     pad = 3 * s
+    if getattr(meta, "edited", False):
+        circle = QRectF(target.right() - 4 * s - size - 2 * pad, target.bottom() - 4 * s - size - 2 * pad,
+                        size + 2 * pad, size + 2 * pad)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 140))
+        painter.drawEllipse(circle)
+        painter.setFont(emoji_font(round(size * 0.8)))
+        painter.setPen(QColor("white"))
+        painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, "✨")
+        painter.restore()
+    if not (meta.starred or meta.bookmarked):
+        return
+    icons = (["⭐"] if meta.starred else []) + (["🔖"] if meta.bookmarked else [])
     width = len(icons) * size + (len(icons) + 1) * pad
     pill = QRectF(target.left() + 4 * s, target.top() + 4 * s, width, size + 2 * pad)
     painter.save()

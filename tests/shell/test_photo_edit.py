@@ -84,6 +84,35 @@ def test_keywords_and_date_survive(tmp_path, monkeypatch):
         [data] = et.read([out], READ_TAGS)
     meta = parse_meta(data)
     assert meta.keywords == ["josh", "new york"] and meta.label == "Red" and meta.date_taken == taken
+    assert meta.edited  # the ✨ mark
+
+
+@pytest.mark.skipif(not find_exiftool(), reason="ExifTool not installed")
+@pytest.mark.parametrize("name", ["a.jpg", "b.png"])
+def test_edited_mark_wins_over_an_old_one(tmp_path, monkeypatch, name):
+    from photo_manager.core.metadata import READ_TAGS, parse_meta
+
+    src = tmp_path / name
+    Image.new("RGB", (32, 24), "green").save(src)
+    monkeypatch.setattr("send2trash.send2trash", lambda p: Path(p).unlink())
+    with ExifTool(find_exiftool()) as et:
+        et.write(str(src), ["-EXIF:ProcessingSoftware=Some Other App"])
+        [before] = et.read([str(src)], READ_TAGS)
+        assert not parse_meta(before).edited
+        out = save_edit(str(src), Adjustments(contrast=20), et)
+        [data] = et.read([out], READ_TAGS)
+    assert parse_meta(data).edited
+
+
+def test_edited_mark_without_exiftool(tmp_path, monkeypatch):
+    from PIL import Image as PILImage
+
+    src = tmp_path / "c.jpg"
+    PILImage.new("RGB", (16, 16), "red").save(src)
+    monkeypatch.setattr("send2trash.send2trash", lambda p: Path(p).unlink())
+    out = save_edit(str(src), Adjustments(contrast=20))
+    with PILImage.open(out) as im:
+        assert im.getexif().get(0x000B) == "Media Manager edit"
 
 
 def test_auto_and_white_balance():

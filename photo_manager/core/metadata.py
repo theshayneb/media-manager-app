@@ -25,7 +25,11 @@ READ_TAGS = [
     "-XMP-xmpDM:Good",
     "-Duration#",  # videos: length in seconds (# = plain number)
     "-Composite:ImageSize",
+    "-EXIF:ProcessingSoftware",  # Media Manager: "Media Manager edit" on photos saved from its Edit window
 ]
+
+# Written into photos saved from Media Manager's Edit window (they get a ✨ in the corner).
+EDITED_MARK = "Media Manager edit"
 
 # Where "date taken" comes from, best source first.
 _DATE_SOURCES = [
@@ -55,6 +59,7 @@ class Meta:
     bookmarked: bool = False
     duration: float | None = None  # videos: length in seconds
     image_size: str = ""
+    edited: bool = False  # saved from Media Manager's Edit window (EXIF ProcessingSoftware)
 
     @property
     def starred(self) -> bool:
@@ -141,6 +146,7 @@ def parse_meta(data: dict) -> Meta:
             if meta.duration:
                 break
     meta.image_size = str(data.get("Composite:ImageSize") or "").replace(" ", "x")
+    meta.edited = str(data.get("EXIF:ProcessingSoftware") or "").startswith(EDITED_MARK)
     return meta
 
 

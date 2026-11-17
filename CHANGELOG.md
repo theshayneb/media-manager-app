@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.5
+
+- Photos saved from the Edit window show ✨ in a dark circle in the bottom-right corner of their thumbnail
+  (and in the big preview). The mark is kept in the photo itself (EXIF ProcessingSoftware "Media Manager
+  edit"), so it stays when the photo is renamed, moved or copied. Photos edited before 0.4.5 don't have it.
+
 ## 0.4.4
 
 - Edit window: a Brightness slider (darker ← → brighter mid-tones; black and white stay put), with its
