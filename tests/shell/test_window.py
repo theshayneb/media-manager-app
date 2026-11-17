@@ -381,7 +381,12 @@ def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
     from PIL import Image
     from PySide6.QtGui import QWindowStateChangeEvent
 
-    from media_manager.edit_dialog import EditDialog
+    from media_manager.edit_view import EditView
+
+    def EditDialog(path):  # noqa: N802  (the Edit view, loaded with a photo)
+        view = EditView()
+        view.load(path)
+        return view
 
     QApplication.instance() or QApplication([])
     from media_manager.app import build_window
@@ -404,7 +409,6 @@ def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
     dlg = EditDialog(str(pic))
     assert not dlg.save_btn.isEnabled()
     assert dlg.view.split == 0.0  # the line starts at the left: all After
-    assert dlg.windowState() & Qt.WindowState.WindowMaximized
     dlg.values["yellow"].setValue(50)
     dlg._render()
     assert dlg.save_btn.isEnabled() and dlg.numbers["yellow"].text() == "+50"
@@ -515,4 +519,75 @@ def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
     win.changeEvent(QWindowStateChangeEvent(Qt.WindowState.WindowNoState))
     _wait(lambda: False, 0.2)
     assert not hidden
+    win.close()
+
+
+def test_edit_mode_in_the_main_window(tmp_path, monkeypatch):
+    """Edit takes Photos' photo area; its sliders take the Folders panel's place; Details stays put.
+    ←/→ go to the next photo; Save writes it, remembers it for "Same as last edit" and leaves."""
+    from pathlib import Path
+
+    from PIL import Image
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+
+    _music_folders(tmp_path)
+    pics = tmp_path / "pics"
+    pics.mkdir()
+    for name, colour in (("a.jpg", (120, 120, 120)), ("b.jpg", (90, 90, 90)), ("c.mp4", None)):
+        if colour:
+            Image.new("RGB", (40, 30), colour).save(pics / name)
+        else:
+            (pics / name).write_bytes(b"")
+    monkeypatch.setattr("send2trash.send2trash", lambda p: Path(p).unlink())
+    win = build_window()
+    win.resize(1400, 900)
+    win.show()
+    _wait(lambda: False, 0.5)
+    win.show_kind("photos")
+    photos = win.photos
+    photos.open_folder(str(pics))
+    photos.grid.select_paths([str(pics / "a.jpg")], current=str(pics / "a.jpg"))
+    details_area = win.dockWidgetArea(win.details_dock)
+    folders_area = win.dockWidgetArea(win.folders_dock)
+
+    photos.edit_mode.toggle()  # the Edit button / Shift+E
+    edit = win.edit
+    assert edit.active and photos.stack.currentWidget() is edit.view
+    assert edit.dock.isVisible() and not win.folders_dock.isVisible()
+    assert win.dockWidgetArea(edit.dock) == folders_area
+    assert win.details_dock.isVisible() and win.dockWidgetArea(win.details_dock) == details_area
+    assert not edit.view.same_btn.isEnabled()  # nothing saved yet
+
+    edit.view.values["brightness"].setValue(40)
+    answers = []
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "exec", lambda box: answers.append(box.text()))
+    monkeypatch.setattr(QMessageBox, "clickedButton", lambda box: box.buttons()[0])  # "Save"
+    edit.view.navigate.emit(1)  # →: asks, saves a.jpg, moves on to b.jpg
+    assert answers == ["Save the edit?"]
+    assert edit.view.path == str(pics / "b.jpg") and photos.grid.current_path() == str(pics / "b.jpg")
+    assert edit.view.adjustments().unchanged() and win.media.last_edit["brightness"] == 40
+    assert _wait(lambda: not photos.bg.pending, 5)
+    with Image.open(pics / "a.jpg") as im:
+        assert im.getpixel((5, 5))[0] > 125  # brighter
+    edit.view.navigate.emit(1)  # → again: c.mp4 can't be edited, so nothing to go to
+    assert edit.view.path == str(pics / "b.jpg")
+
+    assert edit.view.same_btn.isEnabled()
+    edit.view.same_btn.click()
+    assert edit.view.values["brightness"].value() == 40
+    edit.view.save_btn.click()  # Save: leaves Edit
+    assert not edit.active and photos.stack.currentWidget() is photos.grid
+    assert win.folders_dock.isVisible() and not edit.dock.isVisible()
+    assert _wait(lambda: not photos.bg.pending, 5)
+    with Image.open(pics / "b.jpg") as im:
+        assert im.getpixel((5, 5))[0] > 95
+
+    photos.edit_mode.toggle()
+    assert edit.active
+    edit.view.close_with_shortcut()  # Shift+E with nothing changed: just leaves
+    assert not edit.active
     win.close()

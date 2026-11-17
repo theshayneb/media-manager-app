@@ -143,6 +143,9 @@ class MediaWindow(QMainWindow):
         self.details_dock.setStyleSheet(self.photos.styleSheet())
         self._remember_collapsed()
 
+        from .edit_mode import EditMode
+
+        self.edit = EditMode(self)  # Photos' Edit view: its sliders go where the Folders panel is
         self.setCentralWidget(self.stack)
         self.setDockOptions(QMainWindow.DockOption.AnimatedDocks | QMainWindow.DockOption.AllowNestedDocks)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.folders_dock)
@@ -274,11 +277,14 @@ class MediaWindow(QMainWindow):
         self.selected_dock.setVisible(kind == "music")
         self.tags_dock.setVisible(kind == "music")
         self.details_dock.setVisible(kind == "photos")
+        if self.edit.active:  # editing a photo: its sliders show with Photos only, in the Folders panel's place
+            self.edit.dock.setVisible(kind == "photos")
+            self.folders_dock.setVisible(kind != "photos")
         QTimer.singleShot(0, self._restore_widths)
 
     # ------------------------------------------------------------ panel widths
     def _docks(self) -> list[QDockWidget]:
-        return [self.folders_dock, self.selected_dock, self.tags_dock, self.details_dock]
+        return [self.folders_dock, self.selected_dock, self.tags_dock, self.details_dock, self.edit.dock]
 
     def _side(self, dock: QDockWidget) -> bool:
         return self.dockWidgetArea(dock) in (Qt.DockWidgetArea.LeftDockWidgetArea,

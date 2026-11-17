@@ -1,6 +1,6 @@
-"""The Edit window (the user's "Option A and C"): the photo with a line down it (original on the left,
-the edit on the right; drag the line), five sliders on the right, and "Hold for Before" (or the space bar)
-to see the whole original for a moment."""
+"""The Edit view (the user's "Option A and C"): the photo with a line down it (original on the left,
+the edit on the right; drag the line) and "Hold for Before" (or the space bar) to see the whole original.
+Shown in Photos' photo area like the big preview, with its sliders in a side panel (see edit_mode)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
-    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -189,53 +188,56 @@ class CompareView(QWidget):
         self._moving_line = False
 
 
-class EditDialog(QDialog):
-    hold = Signal(bool)
+class EditView(QWidget):
+    """The photo being edited, with Hold for Before · Reset · Cancel · Save under it. Shown in Photos'
+    photo area; its sliders (self.panel) go in a side panel in the Folders panel's place (see edit_mode)."""
 
-    def __init__(self, path: str, parent: QWidget | None = None):
+    finished = Signal(str)   # "save" or "cancel"
+    navigate = Signal(int)   # ← / →: the previous / next photo
+
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.path = path
-        self.setWindowTitle(f"Edit photo: {os.path.basename(path)}")
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
-        self.resize(1180, 760)
-        self.setWindowState(Qt.WindowState.WindowMaximized)  # opens filling the screen
-        self.original = open_image(path, PREVIEW_PIXELS)  # upright, screen-sized
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.path = ""
+        self.original = Image.new("RGB", (1, 1))
         self.view = CompareView(to_qimage(self.original))
         self.values: dict[str, QSlider] = {}
         self.numbers: dict[str, QLabel] = {}
-
         self.resets: dict[str, QToolButton] = {}
         self.checks: dict[str, QCheckBox] = {}
         self.parts: dict[str, list[QWidget]] = {}  # each slider's widgets, greyed out when it's unticked
+        self._last: dict | None = None
+        self._result = 0
+
         sliders = QWidget()
         sv = QVBoxLayout(sliders)
         sv.setContentsMargins(0, 0, 8, 0)
-        top = QHBoxLayout()
-        self.auto_all = QPushButton("Auto all")
-        self.auto_all.setToolTip("Set the light and colour sliders from the photo (you can still move them after)")
-        self.auto_all.setAutoDefault(False)
-        self.auto_all.clicked.connect(lambda: self.set_auto(None))
         self.pick_btn = QPushButton("Pick white")
         self.pick_btn.setCheckable(True)
         self.pick_btn.setAutoDefault(False)
         self.pick_btn.setToolTip("White balance: then click something in the photo that should be white or grey "
                                  "(a wall, a shirt, clouds). Sets Blue ↔ Yellow and Green ↔ Red.")
         self.pick_btn.toggled.connect(self._picking)
-        top.addWidget(self.auto_all)
-        top.addWidget(self.pick_btn)
-        sv.addLayout(top)
-        self.pick_hint = QLabel("Click something white or grey in the photo")
-        self.pick_hint.setStyleSheet("color: #e0a040; font-size: 11px;")
-        self.pick_hint.setVisible(False)
-        sv.addWidget(self.pick_hint)
+        self.same_btn = QPushButton("Same as last edit")
+        self.same_btn.setAutoDefault(False)
+        self.same_btn.setToolTip("Set every slider the way you saved the previous photo")
+        self.same_btn.clicked.connect(self.same_as_last)
+        self.same_btn.setEnabled(False)
         self.view.picked.connect(self._picked)
 
         for heading, rows in (("LIGHT & COLOUR", SLIDERS), ("DETAIL", DETAIL)):
             sv.addWidget(_heading(heading))
             self._big_rows(sv, rows)
+        buttons = QHBoxLayout()  # between the adjustments and the colours (the user's layout)
+        buttons.addWidget(self.pick_btn)
+        buttons.addWidget(self.same_btn)
+        sv.addLayout(buttons)
+        self.pick_hint = QLabel("Click something white or grey in the photo")
+        self.pick_hint.setStyleSheet("color: #e0a040; font-size: 11px;")
+        self.pick_hint.setVisible(False)
+        sv.addWidget(self.pick_hint)
 
         sv.addWidget(_heading("SATURATION", "(less colour ← → more colour)"))
-
         rows = [("sat_all", "All colours", "#c8c8c8")] + [
             (key, name, colour) for (key, name, _h, _r), colour in zip(SATURATION, SAT_COLOURS, strict=True)]
         grid = QGridLayout()
@@ -255,24 +257,17 @@ class EditDialog(QDialog):
         sv.addLayout(grid)
         sv.addStretch(1)
 
-        scroll = QScrollArea()
-        scroll.setWidget(sliders)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setFixedWidth(330)
-
-        body = QHBoxLayout()
-        body.addWidget(self.view, 1)
-        body.addWidget(scroll)
+        self.panel = QScrollArea()  # the sliders: edit_mode puts them in a side panel
+        self.panel.setWidget(sliders)
+        self.panel.setWidgetResizable(True)
+        self.panel.setFrameShape(QFrame.Shape.NoFrame)
+        self.panel.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.panel.setMinimumWidth(330)
 
         foot = QHBoxLayout()
-        note = "the original goes to the Recycle Bin"
-        if os.path.splitext(path)[1].lower() in SAVED_AS_JPG:
-            note += " · saved as JPG"
-        info = QLabel(f"{os.path.basename(path)} · {note}")
-        info.setStyleSheet("color: palette(placeholder-text);")
-        foot.addWidget(info, 1)
+        self.info = QLabel("")
+        self.info.setStyleSheet("color: palette(placeholder-text);")
+        foot.addWidget(self.info, 1)
         self.before_btn = QPushButton("Hold for Before")
         self.before_btn.setToolTip("Hold to see the whole original (or hold the space bar)")
         self.before_btn.setAutoDefault(False)
@@ -283,16 +278,18 @@ class EditDialog(QDialog):
         reset.clicked.connect(self.reset)
         cancel = QPushButton("Cancel")
         cancel.setAutoDefault(False)
+        cancel.setToolTip("Leave without saving (Shift+E asks first if you changed anything)")
         cancel.clicked.connect(self.reject)
         self.save_btn = QPushButton("Save")
-        self.save_btn.setDefault(True)
         self.save_btn.setEnabled(False)
         self.save_btn.clicked.connect(self.accept)
         for b in (self.before_btn, reset, cancel, self.save_btn):
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # the keys (space, ←/→) stay with the photo
             foot.addWidget(b)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(body, 1)
+        layout.setContentsMargins(6, 4, 6, 6)
+        layout.addWidget(self.view, 1)
         layout.addLayout(foot)
 
         self._auto: dict[str, int] | None = None
@@ -432,13 +429,53 @@ class EditDialog(QDialog):
         self.view.whole_before = on
         self.view.update()
 
-    def close_with_shortcut(self) -> None:
-        """Shift+E (the key that opened it) closes it; with changes, it asks first."""
+    # ---------------------------------------------------------------- a photo in, a result out
+    def load(self, path: str) -> None:
+        """Start editing path: every slider at 0 and ticked, the line at the left, fitted."""
+        self.path = path
+        self.original = open_image(path, PREVIEW_PIXELS)  # upright, screen-sized
+        self._auto, self._cache, self._result = None, {}, 0
+        self.view.before = self.view.after = to_qimage(self.original)
+        self.view.split = 0.0
+        self.view.zoom.reset()
+        self.pick_btn.setChecked(False)
+        self.reset()
+        self._timer.stop()
+        note = "the original goes to the Recycle Bin"
+        if os.path.splitext(path)[1].lower() in SAVED_AS_JPG:
+            note += " · saved as JPG"
+        self.info.setText(f"{os.path.basename(path)} · {note}")
+        self.view.update()
+
+    def set_last(self, values: dict | None) -> None:
+        """The sliders of the last photo saved, for "Same as last edit"."""
+        self._last = values or None
+        self.same_btn.setEnabled(bool(self._last))
+
+    def same_as_last(self) -> None:
+        if not self._last:
+            return
+        for key, slider in self.values.items():
+            slider.setValue(int(self._last.get(key, 0)))
+            self.checks[key].setChecked(True)
+
+    def accept(self) -> None:
+        self._result = 1
+        self.finished.emit("save")
+
+    def reject(self) -> None:
+        self._result = 0
+        self.finished.emit("cancel")
+
+    def result(self) -> int:
+        return self._result
+
+    def confirm_leave(self) -> str | None:
+        """Before leaving this photo: "save", "discard", or None (keep editing). Asks only if something changed."""
         from PySide6.QtWidgets import QMessageBox
 
         if self.adjustments().unchanged():
-            self.reject()
-            return
+            return "discard"
         box = QMessageBox(QMessageBox.Icon.Question, "Edit photo", "Save the edit?", parent=self)
         save = box.addButton("Save", QMessageBox.ButtonRole.AcceptRole)
         discard = box.addButton("Don't save", QMessageBox.ButtonRole.DestructiveRole)
@@ -446,15 +483,31 @@ class EditDialog(QDialog):
         box.setDefaultButton(save)
         box.exec()
         if box.clickedButton() is save:
+            return "save"
+        if box.clickedButton() is discard:
+            return "discard"
+        return None
+
+    def close_with_shortcut(self) -> None:
+        """Shift+E (the key that opened it) closes it; with changes, it asks first."""
+        choice = self.confirm_leave()
+        if choice == "save":
             self.accept()
-        elif box.clickedButton() is discard:
+        elif choice == "discard":
             self.reject()
 
     def keyPressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if event.key() == Qt.Key.Key_E and event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
+        key = event.key()
+        if key == Qt.Key.Key_E and event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
             self.close_with_shortcut()
             return
-        if event.key() == Qt.Key.Key_Space:
+        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            self.navigate.emit(-1 if key == Qt.Key.Key_Left else 1)
+            return
+        if key == Qt.Key.Key_Escape:
+            self.close_with_shortcut()
+            return
+        if key == Qt.Key.Key_Space:
             if not event.isAutoRepeat():
                 self._show_before(True)
             return

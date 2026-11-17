@@ -18,9 +18,19 @@ def test_zoom_keeps_the_spot_under_the_pointer_and_the_edges_in():
     rect = z.rect(fitted, area)
     assert rect.left() == 0 and rect.top() == 0
     z.end_pan()
+    for _ in range(4):  # four notches in, four out
+        z.wheel(-1, at, fitted, area)
+    assert not z.changed and z.rect(fitted, area) == fitted  # back at fitted on the way out
     for _ in range(20):
         z.wheel(-1, at, fitted, area)
-    assert not z.zoomed and z.rect(fitted, area) == fitted
-    for _ in range(40):
+    small = z.rect(fitted, area)
+    assert z.zoom == 0.25 and small.width() == 200 and small.center() == area.center()  # smaller, centred
+    z.start_pan(QPointF(500, 300))
+    z.pan(QPointF(900, 300), fitted, area)  # nothing to look around: stays centred
+    assert z.rect(fitted, area).center() == area.center()
+    z.end_pan()
+    for _ in range(20):
+        z.wheel(1, at, fitted, area)
+    for _ in range(20):
         z.wheel(1, at, fitted, area)
     assert z.zoom == 6.0  # the most it goes in

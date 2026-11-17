@@ -6,6 +6,7 @@ from __future__ import annotations
 from PySide6.QtCore import QPointF, QRectF, Qt
 
 MAX_ZOOM = 6.0
+MIN_ZOOM = 0.25  # zooming out below fitted: smaller on the screen
 STEP = 1.25  # per wheel notch
 
 
@@ -23,12 +24,17 @@ class Zoom:
 
     @property
     def zoomed(self) -> bool:
+        """Bigger than fitted (so dragging looks around)."""
         return self.zoom > 1.0001
+
+    @property
+    def changed(self) -> bool:
+        return abs(self.zoom - 1) > 0.0001
 
     def rect(self, fitted: QRectF, area: QRectF) -> QRectF:
         """Where the picture goes: fitted (the zoom-1 rectangle) scaled up around (cx, cy), never leaving a gap
         at an edge while it's bigger than the area."""
-        if not self.zoomed or fitted.isEmpty():
+        if not self.changed or fitted.isEmpty():
             return fitted
         w, h = fitted.width() * self.zoom, fitted.height() * self.zoom
 
@@ -52,11 +58,13 @@ class Zoom:
         before = self.rect(fitted, area)
         fx = (at.x() - before.left()) / before.width()
         fy = (at.y() - before.top()) / before.height()
-        new = max(1.0, min(MAX_ZOOM, self.zoom * STEP ** notches))
+        new = max(MIN_ZOOM, min(MAX_ZOOM, self.zoom * STEP ** notches))
+        if abs(new - 1) < 0.02:  # back at fitted (the steps don't land on exactly 1)
+            new = 1.0
         if abs(new - self.zoom) < 1e-6:
             return False
         self.zoom = new
-        if not self.zoomed:
+        if not self.changed:
             self.reset()
             return True
         w, h = fitted.width() * new, fitted.height() * new

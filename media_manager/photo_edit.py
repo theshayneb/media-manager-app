@@ -331,24 +331,17 @@ def save_edit(path: str, a: Adjustments, et: "ExifTool | None" = None) -> str:
 
 # ------------------------------------------------------------------ in Photos
 def edit_selected(photos) -> None:  # type: ignore[no-untyped-def]
-    """Open the selected photo in the Edit window; on Save, write it (on Photos' file thread)."""
-    from PySide6.QtWidgets import QDialog, QMessageBox
+    """The Edit button / Shift+E: start editing the selected photo, or (while editing) close the Edit view."""
+    mode = getattr(photos, "edit_mode", None)
+    if mode is not None:
+        mode.toggle()
 
-    from .edit_dialog import EditDialog
 
-    paths = photos.action_paths()
-    if len(paths) != 1 or not can_edit(paths[0]):
-        QMessageBox.information(photos, "Edit", "Select one photo (JPG, PNG or HEIC) to edit.")
-        return
-    path = paths[0]
-    try:
-        dialog = EditDialog(path, photos)
-    except OSError as exc:
-        QMessageBox.warning(photos, "Edit", f"Couldn't open the photo:\n{exc}")
-        return
-    if dialog.exec() != QDialog.DialogCode.Accepted:
-        return
-    adjustments, et = dialog.adjustments(), photos.et
+def save_in_photos(photos, path: str, adjustments: Adjustments) -> None:  # type: ignore[no-untyped-def]
+    """Write the edit (on Photos' file thread) and show the result in the grid."""
+    from PySide6.QtWidgets import QMessageBox
+
+    et = photos.et
     photos.status.setText("Saving the edited photo…")
 
     def done(new_path, error: str | None) -> None:  # type: ignore[no-untyped-def]
@@ -360,10 +353,15 @@ def edit_selected(photos) -> None:  # type: ignore[no-untyped-def]
             photos.model.refresh_file(new_path)
             photos.model.reload_thumb(new_path)
         else:  # a HEIC is a JPG now
+            selected = photos.grid.selected_paths()
             photos.model.remove_paths([path])
             photos.model.add_path(new_path)
-            photos.regroup(select=[new_path], current=new_path)
+            keep = [new_path if os.path.normcase(p) == os.path.normcase(path) else p for p in selected]
+            photos.regroup(select=keep or [new_path], current=keep[0] if keep else new_path)
             photos._show_count()
+            mode = getattr(photos, "edit_mode", None)
+            if mode is not None:
+                mode.renamed(path, new_path)
         photos._load_meta([new_path])
         if photos.previewing:
             photos._preview_show_current()

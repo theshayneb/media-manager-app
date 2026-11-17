@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0
+
+- Edit now opens inside the main window, like the big preview: the photo (with Hold for Before · Reset ·
+  Cancel · Save under it) in the photo area, the sliders in the Folders panel's place, and Photos' Details
+  panel where you keep it, so you can label, add keywords, set dates and rename while editing. Leaving Edit
+  brings the Folders panel back.
+- ←/→ go to the previous/next photo while editing (asking "Save the edit?" first if you changed something).
+- "Auto all" is gone. "Pick white" and a new "Same as last edit" (sets every slider the way you saved the
+  previous photo) sit between the adjustments and the colour sliders.
+- The mouse wheel also zooms out, below fit-to-screen (down to a quarter), in the Edit view and the big preview.
+
 ## 0.4.5
 
 - Photos saved from the Edit window show ✨ in a dark circle in the bottom-right corner of their thumbnail
