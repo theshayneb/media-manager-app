@@ -44,14 +44,24 @@ def can_edit(path: str) -> bool:
     return Path(path).suffix.lower() in EDITABLE
 
 
+# How far each slider's end goes (0.4.1: about twice 0.4.0's, at the user's request).
+WARM = (0.20, 0.12, -0.40)    # red, green, blue change at Yellow +100
+TINT = (0.30, -0.24, 0.0)     # at Red +100
+CONTRAST_UP, CONTRAST_DOWN = 1.2, 0.8
+LIFT = 0.7                    # shadows / highlights
+
+
+def channel_gains(yellow: float, red: float) -> tuple[float, float, float]:
+    """The red, green and blue multipliers for the two colour sliders (each -1..1)."""
+    return tuple(1 + w * yellow + t * red for w, t in zip(WARM, TINT, strict=True))  # type: ignore[return-value]
+
+
 def lookup_table(a: Adjustments) -> list[int]:
     """768 values: the R, G and B curves, for Image.point."""
-    warm, tint = a.yellow / 100, a.red / 100
-    gains = (1 + 0.10 * warm + 0.15 * tint,   # red
-             1 + 0.06 * warm - 0.12 * tint,   # green
-             1 - 0.20 * warm)                 # blue
-    contrast = 1 + 0.6 * a.contrast / 100
-    shadows, highlights = 0.35 * a.shadows / 100, 0.35 * a.highlights / 100
+    gains = channel_gains(a.yellow / 100, a.red / 100)
+    c = a.contrast / 100
+    contrast = 1 + (CONTRAST_UP if c >= 0 else CONTRAST_DOWN) * c
+    shadows, highlights = LIFT * a.shadows / 100, LIFT * a.highlights / 100
     table: list[int] = []
     for gain in gains:
         for v in range(256):
@@ -61,6 +71,83 @@ def lookup_table(a: Adjustments) -> list[int]:
             x = (x - 0.5) * contrast + 0.5
             table.append(max(0, min(255, round(x * 255))))
     return table
+
+
+# ------------------------------------------------------------------ auto and white balance
+def _slider(value: float) -> int:
+    return max(-100, min(100, round(value * 100)))
+
+
+def neutral(r: float, g: float, b: float) -> tuple[int, int]:
+    """The Blue/Yellow and Green/Red values that make a colour (r, g, b) grey."""
+    if min(r, g, b) <= 0:
+        return 0, 0
+    # r*gain_r = g*gain_g = b*gain_b, with gain = 1 + WARM*w + TINT*t: two straight-line equations in w, t.
+    (wr, wg, wb), (tr, tg, tb) = WARM, TINT
+    a1, b1, c1 = wr * r - wg * g, tr * r - tg * g, g - r
+    a2, b2, c2 = wg * g - wb * b, tg * g - tb * b, b - g
+    det = a1 * b2 - a2 * b1
+    if abs(det) < 1e-9:
+        return 0, 0
+    w = (c1 * b2 - c2 * b1) / det
+    t = (a1 * c2 - a2 * c1) / det
+    return _slider(w), _slider(t)
+
+
+def white_balance_at(image: Image.Image, x: int, y: int, radius: int = 3) -> tuple[int, int]:
+    """Blue/Yellow and Green/Red that make the spot around (x, y) white/grey."""
+    from PIL import ImageStat
+
+    box = (max(0, x - radius), max(0, y - radius), min(image.width, x + radius + 1), min(image.height, y + radius + 1))
+    r, g, b = ImageStat.Stat(image.convert("RGB").crop(box)).mean[:3]
+    return neutral(r, g, b)
+
+
+def _percentile(histogram: list[int], fraction: float) -> int:
+    total, running = sum(histogram), 0
+    for value, count in enumerate(histogram):
+        running += count
+        if running >= total * fraction:
+            return value
+    return 255
+
+
+def auto(image: Image.Image) -> dict[str, int]:
+    """A suggestion for every slider from the photo itself:
+    colour: the mid-tones should average out grey (a bit less than fully, so sunsets stay warm);
+    contrast: the darkest and brightest 1% should come near black and white;
+    shadows: lift the darkest tenth if it's very dark; highlights: tame the brightest tenth if near white
+    (or brighten it a little in a dull photo)."""
+    from PIL import ImageStat
+
+    small = image.convert("RGB")
+    small.thumbnail((400, 400))
+    lum = small.convert("L")
+    mid = lum.point(lambda v: 255 if 30 <= v <= 225 else 0)
+    stat = ImageStat.Stat(small, mid) if mid.getbbox() else ImageStat.Stat(small)
+    yellow, red = neutral(*stat.mean[:3])
+    out = {"yellow": round(yellow * 0.8), "red": round(red * 0.8)}
+
+    hist = lum.histogram()
+    low, high = _percentile(hist, 0.01), _percentile(hist, 0.99)
+    spread = high - low
+    factor = max(0.7, min(1.5, 235 / spread)) if spread >= 30 else 1.0  # a near-flat picture is left alone
+    out["contrast"] = _slider((factor - 1) / (CONTRAST_UP if factor >= 1 else CONTRAST_DOWN))
+
+    x = _percentile(hist, 0.10) / 255
+    shape = LIFT * (1 - x) ** 2 * (1 - (1 - x) ** 6)
+    out["shadows"] = _slider((0.18 - x) / shape) if x < 0.18 and shape > 0.01 else 0
+    out["shadows"] = max(0, out["shadows"])
+
+    x = _percentile(hist, 0.90) / 255
+    shape = LIFT * x ** 2 * (1 - x ** 6)
+    if x > 0.86 and shape > 0.01:
+        out["highlights"] = min(0, _slider((0.82 - x) / shape))
+    elif x < 0.62 and shape > 0.01 and spread >= 30:
+        out["highlights"] = max(0, min(40, _slider((0.70 - x) / shape)))
+    else:
+        out["highlights"] = 0
+    return out
 
 
 def apply(image: Image.Image, a: Adjustments) -> Image.Image:

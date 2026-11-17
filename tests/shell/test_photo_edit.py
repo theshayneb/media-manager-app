@@ -32,7 +32,7 @@ def test_each_slider_goes_the_right_way():
     assert apply(dark, Adjustments(contrast=60)).getpixel((0, 0))[0] < 40
     assert apply(light, Adjustments(contrast=60)).getpixel((0, 0))[0] > 215
     assert apply(dark, Adjustments(shadows=80)).getpixel((0, 0))[0] > 50  # shadows lighter
-    assert apply(light, Adjustments(shadows=80)).getpixel((0, 0))[0] - 215 < 3  # brights barely move
+    assert apply(light, Adjustments(shadows=80)).getpixel((0, 0))[0] - 215 < 6  # brights barely move
     assert apply(light, Adjustments(highlights=-80)).getpixel((0, 0))[0] < 205  # highlights darker
     black = Image.new("RGB", (1, 1), (0, 0, 0))
     assert apply(black, Adjustments(shadows=100)).getpixel((0, 0)) == (0, 0, 0)  # black stays black
@@ -84,3 +84,29 @@ def test_keywords_and_date_survive(tmp_path, monkeypatch):
         [data] = et.read([out], READ_TAGS)
     meta = parse_meta(data)
     assert meta.keywords == ["josh", "new york"] and meta.label == "Red" and meta.date_taken == taken
+
+
+def test_auto_and_white_balance():
+    from media_manager.photo_edit import auto, channel_gains, neutral, white_balance_at
+
+    for rgb in [(150, 140, 110), (110, 130, 160), (140, 120, 130)]:
+        y, r = neutral(*rgb)
+        out = [c * k for c, k in zip(rgb, channel_gains(y / 100, r / 100), strict=True)]
+        assert max(out) - min(out) < 3  # grey after
+    assert neutral(128, 128, 128) == (0, 0)
+    spot = Image.new("RGB", (40, 40), (90, 90, 90))
+    spot.paste((200, 170, 120), (10, 10, 20, 20))
+    assert white_balance_at(spot, 15, 15)[0] < 0  # the yellowish patch -> bluer
+    dull = Image.linear_gradient("L").resize((64, 64)).point(lambda v: 90 + v // 4).convert("RGB")
+    suggested = auto(dull)
+    assert suggested["contrast"] > 20  # a flat, grey-ish picture gets more contrast
+    dark = Image.linear_gradient("L").resize((64, 64)).point(lambda v: v // 3).convert("RGB")
+    assert auto(dark)["shadows"] > 0
+    assert auto(Image.new("RGB", (32, 32), (128, 128, 128))) == {
+        "yellow": 0, "red": 0, "contrast": 0, "shadows": 0, "highlights": 0}
+
+
+def test_sliders_are_stronger():
+    grey = Image.new("RGB", (1, 1), (128, 128, 128))
+    r, g, b = apply(grey, Adjustments(yellow=100)).getpixel((0, 0))
+    assert r - b > 70  # 0.4.0 gave about 38

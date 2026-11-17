@@ -17,15 +17,17 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSlider,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from photo_manager.core.thumbs import open_image
 
-from .photo_edit import SAVED_AS_JPG, Adjustments, apply
+from .photo_edit import SAVED_AS_JPG, Adjustments, apply, auto, white_balance_at
+from .scrub import make_scrubbable
 
-PREVIEW_PIXELS = 1600
+PREVIEW_PIXELS = 2400  # sharp enough for a maximized window
 # (attribute, name, left end, right end, groove colours left -> right)
 SLIDERS = [
     ("yellow", "Blue ↔ Yellow", "Bluer", "Yellower", ("#3b78d8", "#777777", "#d8b83b")),
@@ -43,12 +45,16 @@ def to_qimage(image: Image.Image) -> QImage:
 
 
 class CompareView(QWidget):
-    """The original left of the line, the edit right of it. Press anywhere and drag to move the line."""
+    """The original left of the line, the edit right of it. Press anywhere and drag to move the line.
+    While picking white, a click reports the spot instead (picked)."""
+
+    picked = Signal(float, float)  # where, as fractions of the picture's width and height
 
     def __init__(self, before: QImage, parent: QWidget | None = None):
         super().__init__(parent)
         self.before, self.after = before, before
-        self.split = 0.5          # where the line is, across the picture
+        self.split = 0.0          # where the line is, across the picture: starts at the left (all After)
+        self.picking = False
         self.whole_before = False  # "Hold for Before"
         self.setMinimumSize(360, 240)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -83,14 +89,16 @@ class CompareView(QWidget):
             self._caption(p, rect, "Before", left=True)
         if self.split < 1:
             self._caption(p, rect, "After", left=False)
-        if 0 < self.split < 1:
+        if self.split < 1:  # the line, also at the very left (so it can be found and dragged)
+            x = max(x, rect.left() + 1)
             p.setPen(QPen(QColor("white"), 2))
             p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
             p.setBrush(QColor("white"))
             p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(x, rect.center().y()), 13, 13)
+            hx = min(max(x, rect.left() + 14), rect.right() - 14)  # the handle stays whole at the edges
+            p.drawEllipse(QPointF(hx, rect.center().y()), 13, 13)
             p.setPen(QColor("#222222"))
-            p.drawText(QRectF(x - 13, rect.center().y() - 13, 26, 26), Qt.AlignmentFlag.AlignCenter, "⇔")
+            p.drawText(QRectF(hx - 13, rect.center().y() - 13, 26, 26), Qt.AlignmentFlag.AlignCenter, "⇔")
 
     def _caption(self, p: QPainter, rect: QRectF, text: str, left: bool) -> None:
         font = QFont(self.font())
@@ -110,12 +118,23 @@ class CompareView(QWidget):
             self.split = max(0.0, min(1.0, (x - rect.left()) / rect.width()))
             self.update()
 
+    def set_picking(self, on: bool) -> None:
+        self.picking = on
+        self.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.SplitHCursor)
+
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._move_line(event.position().x())
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if self.picking:
+            rect = self.picture_rect()
+            pos = event.position()
+            if rect.contains(pos):
+                self.picked.emit((pos.x() - rect.left()) / rect.width(), (pos.y() - rect.top()) / rect.height())
+            return
+        self._move_line(event.position().x())
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if event.buttons() & Qt.MouseButton.LeftButton:
+        if event.buttons() & Qt.MouseButton.LeftButton and not self.picking:
             self._move_line(event.position().x())
 
 
@@ -126,47 +145,83 @@ class EditDialog(QDialog):
         super().__init__(parent)
         self.path = path
         self.setWindowTitle(f"Edit photo: {os.path.basename(path)}")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
         self.resize(1180, 760)
+        self.setWindowState(Qt.WindowState.WindowMaximized)  # opens filling the screen
         self.original = open_image(path, PREVIEW_PIXELS)  # upright, screen-sized
         self.view = CompareView(to_qimage(self.original))
         self.values: dict[str, QSlider] = {}
         self.numbers: dict[str, QLabel] = {}
 
+        self.resets: dict[str, QToolButton] = {}
         sliders = QWidget()
-        sliders.setFixedWidth(260)
+        sliders.setFixedWidth(300)
         sv = QVBoxLayout(sliders)
         sv.setContentsMargins(0, 0, 0, 0)
+        top = QHBoxLayout()
+        self.auto_all = QPushButton("Auto all")
+        self.auto_all.setToolTip("Set all five sliders from the photo (you can still move them after)")
+        self.auto_all.setAutoDefault(False)
+        self.auto_all.clicked.connect(lambda: self.set_auto(None))
+        self.pick_btn = QPushButton("Pick white")
+        self.pick_btn.setCheckable(True)
+        self.pick_btn.setAutoDefault(False)
+        self.pick_btn.setToolTip("White balance: then click something in the photo that should be white or grey "
+                                 "(a wall, a shirt, clouds). Sets Blue ↔ Yellow and Green ↔ Red.")
+        self.pick_btn.toggled.connect(self._picking)
+        top.addWidget(self.auto_all)
+        top.addWidget(self.pick_btn)
+        sv.addLayout(top)
+        self.pick_hint = QLabel("Click something white or grey in the photo")
+        self.pick_hint.setStyleSheet("color: #e0a040; font-size: 11px;")
+        self.pick_hint.setVisible(False)
+        sv.addWidget(self.pick_hint)
+        sv.addSpacing(8)
+        self.view.picked.connect(self._picked)
         for key, name, left, right, colours in SLIDERS:
             grid = QGridLayout()
             grid.setVerticalSpacing(2)
+            grid.setHorizontalSpacing(4)
             title, number = QLabel(name), QLabel("0")
             number.setAlignment(Qt.AlignmentFlag.AlignRight)
             number.setStyleSheet("color: palette(placeholder-text);")
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(-100, 100)
             slider.setValue(0)
-            slider.setToolTip(f"{name}: drag, or click a spot. Double-click the name to put it back to 0.")
+            slider.setToolTip(f"{name}: click a spot to jump there, or drag")
             stops = ", ".join(f"stop:{i / (len(colours) - 1):.2f} {c}" for i, c in enumerate(colours))
             slider.setStyleSheet(
                 "QSlider::groove:horizontal { height: 6px; border-radius: 3px; "
                 f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, {stops}); }}"
                 "QSlider::handle:horizontal { width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; "
                 "background: #e6e6e6; border: 1px solid #888888; }")
+            make_scrubbable(slider)  # a click jumps there
             slider.valueChanged.connect(lambda v, key=key: self._changed(key, v))
+            reset = QToolButton(text="↺")
+            reset.setAutoRaise(True)
+            reset.setToolTip(f"Put {name} back to 0")
+            reset.setEnabled(False)
+            reset.clicked.connect(lambda _c=False, s=slider: s.setValue(0))
+            auto_btn = QToolButton(text="A")
+            auto_btn.setAutoRaise(True)
+            auto_btn.setToolTip(f"Auto: set {name} from the photo")
+            auto_btn.clicked.connect(lambda _c=False, key=key: self.set_auto(key))
             ends = QHBoxLayout()
             for text, align in ((left, Qt.AlignmentFlag.AlignLeft), (right, Qt.AlignmentFlag.AlignRight)):
                 label = QLabel(text)
                 label.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
                 label.setAlignment(align)
                 ends.addWidget(label)
-            title.mouseDoubleClickEvent = lambda _e, s=slider: s.setValue(0)  # type: ignore[method-assign]
             grid.addWidget(title, 0, 0)
             grid.addWidget(number, 0, 1)
             grid.addWidget(slider, 1, 0, 1, 2)
+            grid.addWidget(reset, 1, 2)
+            grid.addWidget(auto_btn, 1, 3)
             grid.addLayout(ends, 2, 0, 1, 2)
+            grid.setColumnStretch(0, 1)
             sv.addLayout(grid)
             sv.addSpacing(10)
-            self.values[key], self.numbers[key] = slider, number
+            self.values[key], self.numbers[key], self.resets[key] = slider, number, reset
         sv.addStretch(1)
 
         body = QHBoxLayout()
@@ -202,6 +257,7 @@ class EditDialog(QDialog):
         layout.addLayout(body, 1)
         layout.addLayout(foot)
 
+        self._auto: dict[str, int] | None = None
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(25)
@@ -210,8 +266,28 @@ class EditDialog(QDialog):
     def adjustments(self) -> Adjustments:
         return Adjustments(**{key: s.value() for key, s in self.values.items()})
 
+    def set_auto(self, key: str | None) -> None:
+        """Auto for one slider (key) or all of them (None)."""
+        if self._auto is None:
+            self._auto = auto(self.original)
+        for k, value in self._auto.items():
+            if key is None or k == key:
+                self.values[k].setValue(value)
+
+    def _picking(self, on: bool) -> None:
+        self.view.set_picking(on)
+        self.pick_hint.setVisible(on)
+
+    def _picked(self, fx: float, fy: float) -> None:
+        x, y = int(fx * self.original.width), int(fy * self.original.height)
+        yellow, red = white_balance_at(self.original, x, y, radius=max(2, self.original.width // 300))
+        self.values["yellow"].setValue(yellow)
+        self.values["red"].setValue(red)
+        self.pick_btn.setChecked(False)
+
     def _changed(self, key: str, value: int) -> None:
         self.numbers[key].setText(f"{value:+d}" if value else "0")
+        self.resets[key].setEnabled(value != 0)
         self.save_btn.setEnabled(not self.adjustments().unchanged())
         self._timer.start()
 

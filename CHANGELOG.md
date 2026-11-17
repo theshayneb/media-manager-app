@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1
+
+- Edit window: opens maximized (it has Minimize / Maximize buttons now); the before/after line starts at the
+  left, so you see the whole edit first.
+- Each slider: click a spot to jump there; a ↺ arrow puts it back to 0; an "A" sets it from the photo.
+  "Auto all" sets all five.
+- White balance: "Pick white", then click something in the photo that should be white or grey; the two colour
+  sliders move to make it neutral.
+- The sliders are about twice as strong at their ends.
+
 ## 0.4.0
 
 - Photos: Edit (button after Convert, Shift+E, or right-click → Edit…). Five sliders: Blue ↔ Yellow,

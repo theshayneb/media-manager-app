@@ -403,6 +403,8 @@ def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
     Image.new("RGB", (80, 60), (128, 128, 128)).save(pic)
     dlg = EditDialog(str(pic))
     assert not dlg.save_btn.isEnabled()
+    assert dlg.view.split == 0.0  # the line starts at the left: all After
+    assert dlg.windowState() & Qt.WindowState.WindowMaximized
     dlg.values["yellow"].setValue(50)
     dlg._render()
     assert dlg.save_btn.isEnabled() and dlg.numbers["yellow"].text() == "+50"
@@ -417,6 +419,33 @@ def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
     assert abs(dlg.view.split - 0.25) < 0.02
     dlg.reset()
     assert dlg.adjustments().unchanged() and not dlg.save_btn.isEnabled()
+
+    # Each slider: a click jumps there; ↺ puts it back to 0; A sets it from the photo.
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    slider = dlg.values["contrast"]
+    slider.resize(200, 20)
+    QTest.mouseClick(slider, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(190, 10))
+    assert slider.value() > 70 and dlg.resets["contrast"].isEnabled()
+    dlg.resets["contrast"].click()
+    assert slider.value() == 0 and not dlg.resets["contrast"].isEnabled()
+
+    warm = tmp_path / "warm.jpg"
+    Image.new("RGB", (80, 60), (170, 140, 100)).save(warm)
+    dlg2 = EditDialog(str(warm))
+    dlg2.set_auto("yellow")
+    assert dlg2.values["yellow"].value() < 0 and dlg2.values["contrast"].value() == 0  # only that one
+    dlg2.set_auto(None)
+    dlg2.reset()
+    dlg2.pick_btn.setChecked(True)
+    assert dlg2.view.picking
+    dlg2.view.picked.emit(0.5, 0.5)  # clicked the (orange) middle: make it grey
+    assert not dlg2.pick_btn.isChecked() and dlg2.values["yellow"].value() < -30
+    dlg2._render()
+    c = dlg2.view.after.pixelColor(40, 30)
+    assert max(c.red(), c.green(), c.blue()) - min(c.red(), c.green(), c.blue()) < 12
+    dlg2.close()
     dlg.close()
 
     # The tray: minimizing hides the window when the tray is there; the menu's tick turns it off.
