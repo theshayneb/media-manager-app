@@ -79,7 +79,7 @@ def test_keywords_and_date_survive(tmp_path, monkeypatch):
         taken = datetime(2024, 6, 14, 18, 32, 5)
         et.write(str(src), date_args(str(src), taken, False))
         et.write(str(src), keyword_args(str(src), add=["josh", "new york"]))
-        et.write(str(src), label_args(str(src), "Red"))
+        et.write(str(src), label_args("Red"))
         out = save_edit(str(src), Adjustments(shadows=40), et)
         [data] = et.read([out], READ_TAGS)
     meta = parse_meta(data)
