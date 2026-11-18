@@ -63,6 +63,49 @@ class Adjustments:
         return not any(v for k, v in vars(self).items() if k.startswith("sat_"))
 
 
+@dataclass(frozen=True)
+class Turn:
+    """Rotate and flip: the photo mirrored left-right (if mirror), then turned clockwise quarter × 90°.
+    Every mix of ↻, Flip horizontal and Flip vertical comes down to one of these eight."""
+
+    quarter: int = 0
+    mirror: bool = False
+
+    def unchanged(self) -> bool:
+        return self.quarter % 4 == 0 and not self.mirror
+
+    def rotated(self) -> "Turn":
+        """↻: 90° clockwise more."""
+        return Turn((self.quarter + 1) % 4, self.mirror)
+
+    def flipped(self, vertical: bool = False) -> "Turn":
+        """The picture as it is now, mirrored left-right (or top-bottom)."""
+        return Turn(((2 if vertical else 0) - self.quarter) % 4, not self.mirror)
+
+    def image(self, image: Image.Image) -> Image.Image:
+        if self.mirror:
+            image = ImageOps.mirror(image)
+        for _ in range(self.quarter % 4):
+            image = image.transpose(Image.Transpose.ROTATE_270)  # 90° clockwise
+        return image
+
+    def size(self, w: int, h: int) -> tuple[int, int]:
+        return (h, w) if self.quarter % 2 else (w, h)
+
+    def box_back(self, box: tuple, w: int, h: int) -> tuple[int, int, int, int]:
+        """A box (left, top, right, bottom) on the turned picture -> the same part of the photo as it is
+        (w × h, upright), for cropping the file."""
+        corners = [(box[0], box[1]), (box[2], box[3])]
+        cw, ch = self.size(w, h)
+        for _ in range(self.quarter % 4):  # undo each 90° clockwise turn
+            corners = [(y, cw - x) for x, y in corners]
+            cw, ch = ch, cw
+        if self.mirror:
+            corners = [(w - x, y) for x, y in corners]
+        xs, ys = [round(x) for x, _ in corners], [round(y) for _, y in corners]
+        return min(xs), min(ys), max(xs), max(ys)
+
+
 # The colours with a saturation slider: (field, name, hue in degrees, how far either side it reaches).
 SATURATION = [
     ("sat_red", "Red", 0, 25), ("sat_orange", "Orange", 30, 20), ("sat_yellow", "Yellow", 55, 25),
@@ -287,8 +330,8 @@ def apply(image: Image.Image, a: Adjustments, cache: dict | None = None) -> Imag
     return rgb
 
 
-def save_edit(path: str, a: Adjustments, et: "ExifTool | None" = None) -> str:
-    """Apply a to the photo; returns where it is now (a HEIC comes back as .jpg)."""
+def save_edit(path: str, a: Adjustments, et: "ExifTool | None" = None, turn: Turn = Turn()) -> str:
+    """Apply a (and the rotate/flip) to the photo; returns where it is now (a HEIC comes back as .jpg)."""
     src_path = Path(path)
     as_jpg = src_path.suffix.lower() in SAVED_AS_JPG
     with Image.open(path) as src:
@@ -302,7 +345,7 @@ def save_edit(path: str, a: Adjustments, et: "ExifTool | None" = None) -> str:
         exif[0x000B] = EDITED_MARK  # ProcessingSoftware (ExifTool writes it again below, after copying tags)
         if out_fmt in ("JPEG", "PNG", "WEBP"):
             params["exif"] = exif.tobytes()
-    image = apply(upright, a)
+    image = turn.image(apply(upright, a))
     if out_fmt == "JPEG":
         image = _flatten(image)
     ext = ".jpg" if as_jpg else src_path.suffix
@@ -338,7 +381,8 @@ def edit_selected(photos) -> None:  # type: ignore[no-untyped-def]
         mode.toggle()
 
 
-def save_in_photos(photos, path: str, adjustments: Adjustments) -> None:  # type: ignore[no-untyped-def]
+def save_in_photos(photos, path: str, adjustments: Adjustments,  # type: ignore[no-untyped-def]
+                   turn: Turn = Turn()) -> None:
     """Write the edit (on Photos' file thread) and show the result in the grid."""
     from PySide6.QtWidgets import QMessageBox
 
@@ -369,4 +413,4 @@ def save_in_photos(photos, path: str, adjustments: Adjustments) -> None:  # type
         photos.refresh_sidebar()
         photos.status.setText("Saved the edit. The original is in the Recycle Bin.")
 
-    photos.bg.run(lambda: save_edit(path, adjustments, et), done)
+    photos.bg.run(lambda: save_edit(path, adjustments, et, turn), done)

@@ -306,22 +306,25 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Save an edit: the phone's photo now (its original to the Trash), the OneDrive copy queued. */
-    fun saveEdit(p: Photo, adjustments: Adjustments, uprightCrop: List<Double>?, then: () -> Unit) {
+    fun saveEdit(p: Photo, adjustments: Adjustments, uprightCrop: List<Double>?, turn: mm.core.Turn = mm.core.Turn(),
+                 then: () -> Unit) {
         busy = true
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.Default) {
                     val bytes = store.read(p)
                     val rawCrop = uprightCrop?.let { cropToRaw(it, orientationOf(bytes)) }
-                    val edited = editImage(bytes, adjustments, rawCrop)
+                    val edited = editImage(bytes, adjustments, rawCrop, turn)
                     store.keepOriginalInTrash(p, bytes)
                     store.write(p, edited)
                     fields[p.id] = store.fields(p)
                     thumbs.remove(p.id)
-                    record(p, Change.Edit(adjustments.toMap(), rawCrop))
+                    record(p, Change.Edit(adjustments.toMap(), rawCrop, if (turn.unchanged) null else turn.toList()))
                 }
-                lastEdit = adjustments.toMap()
-                app().getSharedPreferences("edit", 0).edit().putString("last", org.json.JSONObject(lastEdit as Map<*, *>).toString()).apply()
+                if (!adjustments.unchanged) {  // "Same as last edit": the sliders (a rotate/flip is for this photo only)
+                    lastEdit = adjustments.toMap()
+                    app().getSharedPreferences("edit", 0).edit().putString("last", org.json.JSONObject(lastEdit as Map<*, *>).toString()).apply()
+                }
                 message = "Saved. The original is in the Trash."
                 then()
             } catch (e: OutOfMemoryError) {

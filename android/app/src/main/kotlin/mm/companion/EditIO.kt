@@ -8,6 +8,7 @@ import mm.core.Adjustments
 import mm.core.Jpeg
 import mm.core.Pixels
 import mm.core.Png
+import mm.core.Turn
 import mm.core.applyEdit
 import mm.core.markEdited
 import java.io.ByteArrayInputStream
@@ -56,28 +57,25 @@ fun upright(bitmap: Bitmap, orientation: Int): Bitmap {
     return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
 }
 
-/** A crop chosen on the upright photo (fractions left, top, right, bottom) in the file's own pixel order. */
-fun cropToRaw(box: List<Double>, orientation: Int): List<Double> {
-    val (l, t, r, b) = box
-    return when (orientation) {
-        ExifInterface.ORIENTATION_ROTATE_180 -> listOf(1 - r, 1 - b, 1 - l, 1 - t)
-        ExifInterface.ORIENTATION_ROTATE_90 -> listOf(t, 1 - r, b, 1 - l)
-        ExifInterface.ORIENTATION_ROTATE_270 -> listOf(1 - b, l, 1 - t, r)
-        else -> box
-    }
-}
+/** A crop chosen on the photo as it's shown (fractions left, top, right, bottom) in the file's own pixel order. */
+fun cropToRaw(box: List<Double>, orientation: Int): List<Double> = Turn.ofOrientation(orientation).boxBack(box)
 
 /**
  * The edit, done to a whole JPEG or PNG (kept as what it is): the same maths as the preview, then the crop (fractions of the file's own
  * pixels), re-encoded, with all the photo's information (EXIF, XMP, IPTC, colour profile) carried over and
  * the ✨ mark added. The picture keeps its orientation tag, so it shows the right way up everywhere.
  */
-fun editImage(src: ByteArray, adjustments: Adjustments, rawCrop: List<Double>?): ByteArray {
+fun editImage(src: ByteArray, adjustments: Adjustments, rawCrop: List<Double>?, turn: Turn = Turn()): ByteArray {
     val bitmap = BitmapFactory.decodeByteArray(src, 0, src.size, BitmapFactory.Options().apply {
         inPreferredConfig = Bitmap.Config.ARGB_8888
     }) ?: throw IllegalStateException("Couldn't read the photo")
     var pixels = applyEdit(bitmap.toPixels(), adjustments)
     bitmap.recycle()
+    if (!turn.unchanged) {
+        // Turned as you see it (upright): in the file's own pixel order, so its orientation tag stays right.
+        val o = Turn.ofOrientation(orientationOf(src))
+        pixels = o.then(turn).then(o.inverse()).apply(pixels)
+    }
     if (rawCrop != null) {
         val (l, t, r, b) = rawCrop
         pixels = pixels.crop((l * pixels.width).roundToInt(), (t * pixels.height).roundToInt(),

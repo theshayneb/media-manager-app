@@ -34,6 +34,7 @@ fun Change.toJson(): JSONObject = JSONObject().apply {
             put("type", "edit")
             put("adjustments", JSONObject(c.adjustments as Map<*, *>))
             c.crop?.let { put("crop", JSONArray(it)) }
+            c.turn?.let { put("turn", JSONArray(it)) }
         }
         Change.Delete -> put("type", "delete")
     }
@@ -51,7 +52,8 @@ fun changeFromJson(o: JSONObject): Change = when (o.getString("type")) {
     "edit" -> {
         val a = o.getJSONObject("adjustments")
         Change.Edit(a.keys().asSequence().associateWith { a.getInt(it) },
-            o.optJSONArray("crop")?.let { arr -> (0 until arr.length()).map { arr.getDouble(it) } })
+            o.optJSONArray("crop")?.let { arr -> (0 until arr.length()).map { arr.getDouble(it) } },
+            o.optJSONArray("turn")?.let { arr -> (0 until arr.length()).map { arr.getInt(it) } })
     }
     "delete" -> Change.Delete
     else -> throw IllegalArgumentException(o.toString())

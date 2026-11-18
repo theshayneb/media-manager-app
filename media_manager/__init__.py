@@ -1,3 +1,3 @@
 """Media Manager: review, tag, rename, move and play photos, videos, music, movies and TV in one app."""
 
-__version__ = "0.6.1"
+__version__ = "0.6.2"

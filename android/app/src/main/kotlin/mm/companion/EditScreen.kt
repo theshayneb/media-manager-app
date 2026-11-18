@@ -25,6 +25,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -60,6 +62,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
 import mm.core.Adjustments
 import mm.core.Pixels
+import mm.core.Turn
 import mm.core.applyEdit
 import mm.core.auto
 import mm.core.whiteBalanceAt
@@ -106,9 +109,13 @@ fun EditScreen(model: AppModel, photo: Photo) {
     var ratio by remember { mutableStateOf<Float?>(null) }
     var asking by remember { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<Map<String, Int>?>(null) }
+    var turn by remember { mutableStateOf(Turn()) }
+    var flipMenu by remember { mutableStateOf(false) }
+    var turnedBefore by remember { mutableStateOf<ImageBitmap?>(null) }  // the original, turned as the edit is
 
     fun adjustments() = Adjustments.fromMap(values.filter { on[it.key] != false })
-    fun changed() = !adjustments().unchanged || crop != null
+    fun changed() = !adjustments().unchanged || crop != null || !turn.unchanged
+    fun setTurn(t: Turn) { turn = t; crop = null; cropping = false }  // a crop box drawn before no longer fits
 
     LaunchedEffect(photo.id) {
         val bmp = withContext(Dispatchers.IO) { runCatching { decodePreview(model.store.read(photo), 2048) }.getOrNull() }
@@ -117,17 +124,20 @@ fun EditScreen(model: AppModel, photo: Photo) {
         after = bmp?.asImageBitmap()
     }
     LaunchedEffect(Unit) {
-        snapshotFlow { adjustments() to pixels }.collectLatest { (a, p) ->
+        snapshotFlow { Triple(adjustments(), pixels, turn) }.collectLatest { (a, p, t) ->
             if (p == null) return@collectLatest
-            val out = withContext(Dispatchers.Default) { applyEdit(p, a).toBitmap() }
+            val (out, orig) = withContext(Dispatchers.Default) {
+                t.apply(applyEdit(p, a)).toBitmap() to (if (t.unchanged) null else t.apply(p).toBitmap())
+            }
             after = out.asImageBitmap()
+            turnedBefore = orig?.asImageBitmap() ?: preview?.asImageBitmap()
         }
     }
 
     fun leave() { model.screen = Screen.Grid; model.editing = null }
     BackHandler { if (cropping) cropping = false else if (changed()) asking = true else leave() }
     if (asking) AlertDialog(onDismissRequest = { asking = false }, title = { Text("Save the edit?") },
-        confirmButton = { TextButton(onClick = { asking = false; model.saveEdit(photo, adjustments(), crop) { leave() } }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { asking = false; model.saveEdit(photo, adjustments(), crop, turn) { leave() } }) { Text("Save") } },
         dismissButton = {
             Row {
                 TextButton(onClick = { asking = false; leave() }) { Text("Don't save") }
@@ -138,23 +148,33 @@ fun EditScreen(model: AppModel, photo: Photo) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().background(Panel).padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { if (changed()) asking = true else leave() }) { Text("←  Edit", color = Color.White, fontSize = 17.sp) }
-            Box(Modifier.weight(1f))
             TextButton(onClick = {
                 cropping = !cropping
                 if (cropping && crop == null) crop = listOf(0.05, 0.05, 0.95, 0.95)
             }) { Text(if (cropping) "✓ Done" else "✂ Crop", color = Color.White) }
-            Button(onClick = { model.saveEdit(photo, adjustments(), crop) { leave() } }, enabled = changed() && !model.busy) {
+            if (!cropping) {
+                Box {
+                    TextButton(onClick = { flipMenu = true }) { Text("⇋ Flip", color = Color.White) }
+                    DropdownMenu(flipMenu, { flipMenu = false }) {
+                        DropdownMenuItem(text = { Text("Flip horizontal") }, onClick = { flipMenu = false; setTurn(turn.flipped()) })
+                        DropdownMenuItem(text = { Text("Flip vertical") }, onClick = { flipMenu = false; setTurn(turn.flipped(vertical = true)) })
+                    }
+                }
+                TextButton(onClick = { setTurn(turn.rotated()) }) { Text("↻", color = Color.White, fontSize = 20.sp) }
+            }
+            Box(Modifier.weight(1f))
+            Button(onClick = { model.saveEdit(photo, adjustments(), crop, turn) { leave() } }, enabled = changed() && !model.busy) {
                 if (model.busy) CircularProgressIndicator(Modifier.width(18.dp).height(18.dp), strokeWidth = 2.dp) else Text("Save")
             }
         }
         Note(model)
         val img = after
-        val before = preview?.asImageBitmap()
+        val before = turnedBefore ?: preview?.asImageBitmap()
         Box(Modifier.fillMaxWidth().weight(1f).background(Color(0xFF1B1C1F))) {
             if (img != null && before != null) PhotoView(img, before, split, holding, picking, cropping, crop, ratio,
                 onSplit = { split = it }, onHold = { holding = it }, onCrop = { crop = it },
                 onPick = { fx, fy ->
-                    val p = pixels ?: return@PhotoView
+                    val p = pixels?.let { turn.apply(it) } ?: return@PhotoView  // tapped on the photo as it's shown
                     val (y, r) = whiteBalanceAt(p, (fx * p.width).toInt(), (fy * p.height).toInt(), max(2, p.width / 300))
                     values["yellow"] = y; values["red"] = r; on["yellow"] = true; on["red"] = true
                     picking = false
@@ -167,7 +187,7 @@ fun EditScreen(model: AppModel, photo: Photo) {
                     val chosen = ratio == r || (name == "Free" && ratio == null)
                     Text(name, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(14.dp))
                         .background(if (chosen) Accent else Color(0xFF33363C)).clickable {
-                            val pv = preview
+                            val pv = after  // the photo as it's shown (turned)
                             ratio = if (r == -1f && pv != null) pv.width.toFloat() / pv.height else r
                             crop = fitRatio(crop ?: listOf(0.05, 0.05, 0.95, 0.95), ratio, pv)
                         }.padding(horizontal = 10.dp, vertical = 6.dp))
@@ -217,7 +237,7 @@ private fun smaller(p: Pixels): Pixels {
 }
 
 /** A crop box with this shape (width / height of the upright photo), centred in the old one. */
-private fun fitRatio(box: List<Double>, ratio: Float?, photo: Bitmap?): List<Double> {
+private fun fitRatio(box: List<Double>, ratio: Float?, photo: ImageBitmap?): List<Double> {
     if (ratio == null || photo == null) return box
     val (l, t, r, b) = box
     var w = (r - l) * photo.width; var h = (b - t) * photo.height

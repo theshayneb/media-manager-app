@@ -165,14 +165,15 @@ class EditMode:
 
     # ---------------------------------------------------------------- saving and moving on
     def _save(self) -> None:
-        adjustments = self.view.adjustments()
-        if adjustments.unchanged():
+        adjustments, turn = self.view.adjustments(), self.view.turn
+        if adjustments.unchanged() and turn.unchanged():
             return
         path = self.view.path
         if not os.path.exists(path):  # renamed from the Details panel while editing
             path = self.photos.grid.current_path() or path
-        self.shell.media.last_edit = asdict(adjustments)
-        save_in_photos(self.photos, path, adjustments)
+        if not adjustments.unchanged():  # "Same as last edit": the sliders (a rotate/flip is for this photo only)
+            self.shell.media.last_edit = asdict(adjustments)
+        save_in_photos(self.photos, path, adjustments, turn)
 
     def renamed(self, old: str, new: str) -> None:
         if os.path.normcase(self.view.path) == os.path.normcase(old):

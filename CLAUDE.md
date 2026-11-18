@@ -19,7 +19,7 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   VideoView is patched before Photo Manager's window is built).
 - `photo_edit.py` (curves per channel, saved like Photo Manager's crop: tags copied with ExifTool, original
   to the Recycle Bin, HEIC → JPG), `edit_view.py` (EditView: split-line compare + Hold for Before; its sliders
-  in `.panel`) and `edit_mode.py` (EditMode: the view as a page of Photos' stack, the sliders dock in the
+  in `.panel`) and `photo_edit.Turn` = rotate/flip (also `android/core` Turn.kt), `edit_mode.py` (EditMode: the view as a page of Photos' stack, the sliders dock in the
   Folders dock's place, Details untouched; ←/→, Save/Cancel/Shift+E; "Same as last edit" = settings.last_edit).
   Photo Manager's right-click menu has one hook for it: `extra_menu_items`. Tray: `MediaWindow._build_tray`.
 - Changed inside `photo_manager/` for the ✨ edited mark: `metadata.READ_TAGS`/`Meta.edited`/`EDITED_MARK`

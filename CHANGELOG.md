@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.2
+
+- Edit: ⇋ Flip ▾ (Flip horizontal H, Flip vertical V) and ↻ Rotate (R, 90° clockwise), right of Crop. Shown at
+  once (Before too), saved with Save like the sliders (✨, original to the Recycle Bin), undone by Reset/Cancel.
+  A crop drawn after turning follows the photo as you see it. "Same as last edit" keeps to the sliders.
+- The Android app (0.1.8) has the same ⇋ Flip and ↻ buttons; a turn made on the phone is done to the OneDrive
+  copy too.
+
 ## 0.6.1
 
 - Movies & TV: when a video is dropped into one of your folders, the folder turns orange in the Folders list with

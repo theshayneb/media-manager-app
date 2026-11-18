@@ -418,6 +418,14 @@ def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
     assert dlg.view.whole_before
     dlg.before_btn.released.emit()
     assert not dlg.view.whole_before
+
+    # ↻ and ⇋: shown at once (Before too), saved with Save, undone by Reset.
+    dlg.rotate_btn.click()
+    assert dlg.view.after.width() == 60 and dlg.view.before.width() == 60 and dlg.changed()
+    dlg.flip_btn.menu().actions()[1].trigger()  # Flip vertical
+    assert dlg.turn.mirror and dlg.view.after.height() == 80
+    dlg.reset()
+    assert dlg.turn.unchanged() and dlg.view.after.width() == 80 and not dlg.save_btn.isEnabled()
     dlg.view.resize(400, 300)
     dlg.view._move_line(dlg.view.picture_rect().left() + dlg.view.picture_rect().width() * 0.25)
     assert abs(dlg.view.split - 0.25) < 0.02

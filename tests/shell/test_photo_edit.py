@@ -221,3 +221,51 @@ def test_sharpness_is_visible_on_screen():
     sharp = apply(photo, Adjustments(sharpness=100))
     seen = ImageChops.difference(photo.resize((1200, 900)), sharp.resize((1200, 900)))
     assert ImageStat.Stat(seen.convert("L")).mean[0] > 1.5
+
+
+def _marked(w=60, h=40):
+    """A photo with a red dot near its top-left corner."""
+    img = Image.new("RGB", (w, h), (128, 128, 128))
+    for x in range(4, 10):
+        for y in range(4, 10):
+            img.putpixel((x, y), (255, 0, 0))
+    return img
+
+
+def _red_at(img):
+    px = img.load()
+    return [(x, y) for x in range(img.width) for y in range(img.height) if px[x, y][0] > 200 and px[x, y][1] < 80]
+
+
+def test_rotate_and_flip():
+    from media_manager.photo_edit import Turn
+
+    img = _marked()
+    t = Turn()
+    assert t.unchanged() and t.rotated().rotated().rotated().rotated().unchanged()
+    r = t.rotated().image(img)
+    assert r.size == (40, 60) and min(_red_at(r)) [0] > 25  # turned clockwise: top-left goes top-right
+    h = t.flipped().image(img)
+    assert min(_red_at(h))[0] > 45 and min(_red_at(h))[1] < 10  # mirrored: top-right
+    v = t.flipped(vertical=True).image(img)
+    assert min(_red_at(v))[0] < 10 and min(_red_at(v))[1] > 25  # upside-down mirror: bottom-left
+    assert t.flipped().flipped().unchanged() and t.flipped(True).flipped(True).unchanged()
+    # Every mix: the box drawn on the turned picture is the same part of the photo as it is.
+    for turn in (Turn(q, m) for q in range(4) for m in (False, True)):
+        shown = turn.image(img)
+        box = (2, 1, 14, 13) if not turn.quarter % 2 else (1, 2, 13, 14)
+        box = tuple(min(v, s) for v, s in zip(box, (*shown.size, *shown.size), strict=True))
+        cut_shown = shown.crop(box)
+        back = turn.box_back(box, *img.size)
+        assert list(turn.image(img.crop(back)).getdata()) == list(cut_shown.getdata()), turn
+
+
+def test_save_with_rotate(tmp_path, monkeypatch):
+    from media_manager.photo_edit import Turn
+
+    src = tmp_path / "IMG_2.png"
+    _marked().save(src)
+    monkeypatch.setattr("send2trash.send2trash", lambda p: Path(p).unlink())
+    out = save_edit(str(src), Adjustments(), turn=Turn().rotated())
+    with Image.open(out) as im:
+        assert im.size == (40, 60) and min(_red_at(im.convert("RGB")))[0] > 25

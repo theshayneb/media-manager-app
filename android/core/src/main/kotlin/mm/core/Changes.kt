@@ -12,7 +12,8 @@ sealed class Change {
     data class DateTaken(val exif: String) : Change()               // "2024:06:14 18:32:05"
     data class Rename(val name: String) : Change()                  // new file name, with its extension
     // crop: fractions (left, top, right, bottom) of the file's own pixels, before its orientation is applied
-    data class Edit(val adjustments: Map<String, Int>, val crop: List<Double>? = null) : Change()
+    // turn: rotate/flip of the upright photo ([quarter turns clockwise, mirrored 0/1], see Turn), before the crop
+    data class Edit(val adjustments: Map<String, Int>, val crop: List<Double>? = null, val turn: List<Int>? = null) : Change()
     object Delete : Change()                                         // to the Trash / OneDrive's recycle bin
 
     /** Keywords, labels and flags: done to the photo's XMP/IPTC by [applyTags]. */

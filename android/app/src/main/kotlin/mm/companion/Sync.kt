@@ -18,6 +18,7 @@ import mm.core.DEFAULT_RENAME_PATTERN
 import mm.core.DEFAULT_TEMPLATES
 import mm.core.FilenameTemplate
 import mm.core.Png
+import mm.core.Turn
 import mm.core.applyTags
 import mm.core.formatPattern
 import org.json.JSONObject
@@ -133,7 +134,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             val tmp = File.createTempFile("date", if (Png.isPng(bytes)) ".png" else ".jpg", applicationContext.cacheDir)
             try { tmp.writeBytes(bytes); setDateInFile(tmp, change.exif); tmp.readBytes() } finally { tmp.delete() }
         }
-        change is Change.Edit -> editImage(bytes, Adjustments.fromMap(change.adjustments), change.crop)
+        change is Change.Edit -> editImage(bytes, Adjustments.fromMap(change.adjustments), change.crop, Turn.fromList(change.turn))
         else -> bytes
     }
 }

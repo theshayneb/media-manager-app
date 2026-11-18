@@ -166,3 +166,32 @@ class InteropFile {
         java.io.File("build/interop.png").writeBytes(png)
     }
 }
+
+class TurnTest {
+    private fun grid(w: Int, h: Int) = Pixels(w, h, IntArray(w * h) { it })
+    private val all = (0..3).flatMap { q -> listOf(Turn(q, false), Turn(q, true)) }
+
+    @Test fun rotateAndFlipLikeTheWindowsApp() {
+        val p = grid(3, 2)  // 0 1 2 / 3 4 5
+        assertEquals(listOf(3, 0, 4, 1, 5, 2), Turn().rotated().apply(p).argb.toList())  // clockwise
+        assertEquals(listOf(2, 1, 0, 5, 4, 3), Turn().flipped().apply(p).argb.toList())
+        assertEquals(listOf(3, 4, 5, 0, 1, 2), Turn().flipped(vertical = true).apply(p).argb.toList())
+        assertTrue(Turn().rotated().rotated().rotated().rotated().unchanged)
+        // then() and inverse() agree with doing it to the pixels.
+        for (a in all) for (b in all) {
+            assertEquals(b.apply(a.apply(p)).argb.toList(), a.then(b).apply(p).argb.toList())
+            assertEquals(p.argb.toList(), a.inverse().apply(a.apply(p)).argb.toList())
+        }
+        // A box on the turned picture is the same part of the picture before.
+        val big = grid(6, 4)
+        for (t in all) {
+            val shown = t.apply(big)
+            val box = listOf(0.0, 0.0, 0.5, 0.5)
+            val (l, tp, r, b) = t.boxBack(box)
+            val cut = big.crop((l * 6).toInt(), (tp * 4).toInt(), (r * 6).toInt(), (b * 4).toInt())
+            assertEquals(shown.crop(0, 0, shown.width / 2, shown.height / 2).argb.toList(), t.apply(cut).argb.toList())
+        }
+        // EXIF orientation 6 (rotate 90): a crop on the upright photo, in the file's pixel order.
+        assertEquals(listOf(0.2, 0.25, 0.4, 0.9), Turn.ofOrientation(6).boxBack(listOf(0.1, 0.2, 0.75, 0.4)))
+    }
+}

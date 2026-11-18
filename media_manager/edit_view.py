@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -30,7 +31,7 @@ from photo_manager.core.crop import ASPECT_RATIOS, can_crop, upright_size
 from photo_manager.core.thumbs import open_image
 from photo_manager.ui.preview import CropCanvas
 
-from .photo_edit import SATURATION, SAVED_AS_JPG, Adjustments, apply, auto, white_balance_at
+from .photo_edit import SATURATION, SAVED_AS_JPG, Adjustments, Turn, apply, auto, white_balance_at
 from .scrub import make_scrubbable
 from .zoom import Zoom, notches
 
@@ -300,6 +301,21 @@ class EditView(QWidget):
         self.crop_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.crop_btn.clicked.connect(self.start_crop)
         top.addWidget(self.crop_btn)
+        # Flip and rotate, right of Crop: part of the edit (shown now, saved with Save).
+        self.turn = Turn()
+        self.flip_btn = QPushButton("⇋ Flip ▾")
+        self.flip_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        flip_menu = QMenu(self.flip_btn)
+        flip_menu.addAction("Flip horizontal (H)", lambda: self.flip(False))
+        flip_menu.addAction("Flip vertical (V)", lambda: self.flip(True))
+        self.flip_btn.setMenu(flip_menu)
+        self.flip_btn.setStyleSheet("QPushButton::menu-indicator { width: 0; }")
+        top.addWidget(self.flip_btn)
+        self.rotate_btn = QPushButton("↻ Rotate (R)")
+        self.rotate_btn.setToolTip("Turn the photo 90° clockwise")
+        self.rotate_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.rotate_btn.clicked.connect(self.rotate)
+        top.addWidget(self.rotate_btn)
         self.crop_bar = QWidget()
         bar = QHBoxLayout(self.crop_bar)
         bar.setContentsMargins(0, 0, 0, 0)
@@ -348,9 +364,28 @@ class EditView(QWidget):
         """What's applied (shown and saved): an unticked slider counts as 0."""
         return Adjustments(**{key: s.value() if self.checks[key].isChecked() else 0 for key, s in self.values.items()})
 
+    def changed(self) -> bool:
+        return not (self.adjustments().unchanged() and self.turn.unchanged())
+
     def _update(self) -> None:
-        self.save_btn.setEnabled(not self.adjustments().unchanged())
+        self.save_btn.setEnabled(self.changed())
         self._timer.start()
+
+    # ---------------------------------------------------------------- flip and rotate
+    def rotate(self) -> None:
+        self._set_turn(self.turn.rotated())
+
+    def flip(self, vertical: bool) -> None:
+        self._set_turn(self.turn.flipped(vertical))
+
+    def _set_turn(self, turn: Turn) -> None:
+        if self.cropping:
+            return
+        self.turn = turn
+        self.view.before = to_qimage(turn.image(self.original))
+        self.view.zoom.reset()
+        self._render()
+        self._update()
 
     # ---------------------------------------------------------------- building
     def _big_rows(self, sv: QVBoxLayout, rows: list) -> None:
@@ -451,8 +486,9 @@ class EditView(QWidget):
         self.pick_hint.setVisible(on)
 
     def _picked(self, fx: float, fy: float) -> None:
-        x, y = int(fx * self.original.width), int(fy * self.original.height)
-        yellow, red = white_balance_at(self.original, x, y, radius=max(2, self.original.width // 300))
+        shown = self.turn.image(self.original)  # the click is on the photo as it's shown (turned)
+        x, y = int(fx * shown.width), int(fy * shown.height)
+        yellow, red = white_balance_at(shown, x, y, radius=max(2, shown.width // 300))
         self.values["yellow"].setValue(yellow)
         self.values["red"].setValue(red)
         self.pick_btn.setChecked(False)
@@ -463,12 +499,14 @@ class EditView(QWidget):
         self._update()
 
     def _render(self) -> None:
-        self.view.set_after(to_qimage(apply(self.original, self.adjustments(), self._cache)))
+        self.view.set_after(to_qimage(self.turn.image(apply(self.original, self.adjustments(), self._cache))))
 
     def reset(self) -> None:
         for key, slider in self.values.items():
             slider.setValue(0)
             self.checks[key].setChecked(True)
+        if not self.turn.unchanged():
+            self._set_turn(Turn())
 
     def _show_before(self, on: bool) -> None:
         self.view.whole_before = on
@@ -480,6 +518,7 @@ class EditView(QWidget):
         self.path = path
         self.original = open_image(path, PREVIEW_PIXELS)  # upright, screen-sized
         self._auto, self._cache, self._result = None, {}, 0
+        self.turn = Turn()
         self.view.before = self.view.after = to_qimage(self.original)
         self.view.split = 0.0
         self.view.zoom.reset()
@@ -499,7 +538,7 @@ class EditView(QWidget):
         """The photo changed on disk (cropped): show it again, keeping the sliders as they are."""
         self.original = open_image(self.path, PREVIEW_PIXELS)
         self._auto, self._cache = None, {}
-        self.view.before = to_qimage(self.original)
+        self.view.before = to_qimage(self.turn.image(self.original))
         self.view.zoom.reset()
         self._render()
 
@@ -521,9 +560,10 @@ class EditView(QWidget):
         from PySide6.QtGui import QPixmap
 
         try:
-            full = upright_size(self.path)
+            self._full = upright_size(self.path)
         except Exception:  # noqa: BLE001
-            full = (self.original.width, self.original.height)
+            self._full = (self.original.width, self.original.height)
+        full = self.turn.size(*self._full)  # the box is drawn on the photo as it's shown (turned)
         self.as_copy.setChecked(bool(getattr(self.crop_settings, "crop_as_copy", False)))
         self.cropper.set_image(QPixmap.fromImage(self.view.after), full)  # what you see, edits and all
         self.pages.setCurrentWidget(self.cropper)
@@ -539,7 +579,7 @@ class EditView(QWidget):
     def apply_crop(self) -> None:
         if not self.cropping:
             return
-        box = self.cropper.crop_box()
+        box = self.turn.box_back(self.cropper.crop_box(), *self._full)  # the file isn't turned until Save
         self.cancel_crop()
         self.crop_requested.emit(self.path, box, self.as_copy.isChecked())
 
@@ -570,7 +610,7 @@ class EditView(QWidget):
         """Before leaving this photo: "save", "discard", or None (keep editing). Asks only if something changed."""
         from PySide6.QtWidgets import QMessageBox
 
-        if self.adjustments().unchanged():
+        if not self.changed():
             return "discard"
         box = QMessageBox(QMessageBox.Icon.Question, "Edit photo", "Save the edit?", parent=self)
         save = box.addButton("Save", QMessageBox.ButtonRole.AcceptRole)
@@ -602,6 +642,9 @@ class EditView(QWidget):
             return
         if key == Qt.Key.Key_C and not event.modifiers():
             self.start_crop()
+            return
+        if key in (Qt.Key.Key_R, Qt.Key.Key_H, Qt.Key.Key_V) and not event.modifiers():
+            self.rotate() if key == Qt.Key.Key_R else self.flip(key == Qt.Key.Key_V)
             return
         if key == Qt.Key.Key_E and event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
             self.close_with_shortcut()
