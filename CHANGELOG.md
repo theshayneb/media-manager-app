@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.3
+
+- Edit and the big preview keep your zoom when you go to the previous/next photo (←/→); it goes back to
+  fitted when you close Edit or the big preview.
+
 ## 0.6.2
 
 - Edit: ⇋ Flip ▾ (Flip horizontal H, Flip vertical V) and ↻ Rotate (R, 90° clockwise), right of Crop. Shown at

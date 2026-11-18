@@ -194,13 +194,13 @@ class EditMode:
         if choice == "save":
             self._save()
             self.view.set_last(self.shell.media.last_edit)
-        self._load(target.path)
+        self._load(target.path, keep_zoom=True)  # ←/→: the same zoom (reset when Edit closes)
 
-    def _load(self, path: str) -> None:
+    def _load(self, path: str, keep_zoom: bool = False) -> None:
         self.photos.grid.select_paths([path], current=path)
         self.photos.refresh_sidebar()
         try:
-            self.view.load(path)
+            self.view.load(path, keep_zoom)
         except OSError as exc:
             QMessageBox.warning(self.photos, "Edit", f"Couldn't open the photo:\n{exc}")
             self.leave()

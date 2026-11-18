@@ -105,8 +105,8 @@ def patch_preview() -> None:
     if getattr(canvas, "_zoom_patched", False):
         return
     fitted_target = canvas._target
-    set_image, press, move, release = (canvas.set_image, canvas.mousePressEvent, canvas.mouseMoveEvent,
-                                       canvas.mouseReleaseEvent)
+    press, move, release, hide = (canvas.mousePressEvent, canvas.mouseMoveEvent, canvas.mouseReleaseEvent,
+                                  canvas.hideEvent)
 
     def zoom_of(self) -> Zoom:  # type: ignore[no-untyped-def]
         if not hasattr(self, "_zoom"):
@@ -116,9 +116,12 @@ def patch_preview() -> None:
     def _target(self) -> QRectF:  # type: ignore[no-untyped-def]
         return zoom_of(self).rect(fitted_target(self), QRectF(self.rect()))
 
-    def _set_image(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-        zoom_of(self).reset()
-        return set_image(self, *args, **kwargs)
+    def hideEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        # The zoom stays from photo to photo (←/→) and is reset when the big preview closes (not when the
+        # window is only minimized).
+        if not event.spontaneous():
+            zoom_of(self).reset()
+        return hide(self, event)
 
     def wheelEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         if self.pixmap and zoom_of(self).wheel(notches(event), event.position(), fitted_target(self),
@@ -149,7 +152,7 @@ def patch_preview() -> None:
         return release(self, event)
 
     canvas._target = _target
-    canvas.set_image = _set_image
+    canvas.hideEvent = hideEvent
     canvas.wheelEvent = wheelEvent
     canvas.mousePressEvent = mousePressEvent
     canvas.mouseMoveEvent = mouseMoveEvent

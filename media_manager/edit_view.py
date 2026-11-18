@@ -513,15 +513,17 @@ class EditView(QWidget):
         self.view.update()
 
     # ---------------------------------------------------------------- a photo in, a result out
-    def load(self, path: str) -> None:
-        """Start editing path: every slider at 0 and ticked, the line at the left, fitted."""
+    def load(self, path: str, keep_zoom: bool = False) -> None:
+        """Start editing path: every slider at 0 and ticked, the line at the left, fitted (or, going on with
+        ←/→, zoomed as the photo before was, the user's request)."""
         self.path = path
         self.original = open_image(path, PREVIEW_PIXELS)  # upright, screen-sized
         self._auto, self._cache, self._result = None, {}, 0
         self.turn = Turn()
         self.view.before = self.view.after = to_qimage(self.original)
         self.view.split = 0.0
-        self.view.zoom.reset()
+        if not keep_zoom:
+            self.view.zoom.reset()
         self.pick_btn.setChecked(False)
         self.reset()
         self._timer.stop()

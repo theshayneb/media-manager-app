@@ -510,8 +510,8 @@ def test_edit_button_window_tray_and_quiet_steam(tmp_path, monkeypatch):
     fitted = canvas._target().width()
     canvas.wheelEvent(wheel)
     assert canvas._target().width() > fitted
-    canvas.set_image(pix, (800, 600))  # another photo: fitted again
-    assert canvas._target().width() == fitted
+    canvas.set_image(pix, (800, 600))  # another photo (←/→): the same zoom (the user's request)
+    assert canvas._target().width() > fitted
 
     # The tray: minimizing hides the window when the tray is there; the menu's tick turns it off.
     hidden = []

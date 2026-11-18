@@ -34,3 +34,47 @@ def test_zoom_keeps_the_spot_under_the_pointer_and_the_edges_in():
     for _ in range(20):
         z.wheel(1, at, fitted, area)
     assert z.zoom == 6.0  # the most it goes in
+
+
+def test_zoom_stays_from_photo_to_photo_until_closed(tmp_path):
+    from PIL import Image
+    from PySide6.QtGui import QPixmap
+    from PySide6.QtWidgets import QApplication, QStackedWidget, QWidget
+
+    QApplication.instance() or QApplication([])
+    from media_manager.zoom import patch_preview
+
+    patch_preview()
+    from photo_manager.ui.preview import CropCanvas
+
+    # The big preview: ←/→ give the canvas the next photo; the zoom stays until the preview is closed.
+    stack = QStackedWidget()
+    canvas, grid = CropCanvas(), QWidget()
+    stack.addWidget(grid)
+    stack.addWidget(canvas)
+    stack.resize(400, 300)
+    stack.show()
+    stack.setCurrentWidget(canvas)
+    pix = QPixmap(200, 100)
+    canvas.set_image(pix, (200, 100))
+    canvas._zoom.wheel(-3, QPointF(200, 150), canvas._target(), QRectF(canvas.rect()))
+    smaller = canvas._zoom.zoom
+    assert smaller < 1
+    canvas.set_image(QPixmap(150, 100), (150, 100))  # the next photo
+    assert canvas._zoom.zoom == smaller
+    stack.setCurrentWidget(grid)  # closed
+    assert canvas._zoom.zoom == 1
+
+    # Edit: ←/→ keep the zoom; opening a photo afresh resets it.
+    from media_manager.edit_view import EditView
+
+    a, b = tmp_path / "a.jpg", tmp_path / "b.jpg"
+    Image.new("RGB", (80, 60)).save(a)
+    Image.new("RGB", (60, 80)).save(b)
+    view = EditView()
+    view.load(str(a))
+    view.view.zoom.zoom = 0.5
+    view.load(str(b), keep_zoom=True)
+    assert view.view.zoom.zoom == 0.5
+    view.load(str(a))
+    assert view.view.zoom.zoom == 1
