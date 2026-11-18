@@ -179,6 +179,7 @@ class MediaWindow(QMainWindow):
         self.movies.folders_changed.connect(self.fill)
         self.fill()
         QTimer.singleShot(50, self._restore)
+        QTimer.singleShot(2000, self._write_companion)  # for the Android app, through OneDrive
 
     def _dock(self, title: str, name: str, widget: QWidget) -> QDockWidget:
         dock = QDockWidget(title, self)
@@ -439,11 +440,17 @@ class MediaWindow(QMainWindow):
             if self.media.minimize_to_tray and self.tray.isVisible():
                 QTimer.singleShot(0, self.hide)  # off the taskbar; the tray icon brings it back
 
+    def _write_companion(self) -> None:
+        from . import companion
+
+        companion.write(self.photos.settings, self.media)
+
     # ------------------------------------------------------------ closing
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         self.media.window_geometry = bytes(self.saveGeometry().toBase64()).decode()
         self.media.window_state = bytes(self.saveState().toBase64()).decode()
         self._remember_widths()
+        self._write_companion()
         for part in (self.movies, self.music, self.photos):
             part.close()  # each saves its own settings and stops its work
         try:

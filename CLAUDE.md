@@ -25,6 +25,13 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
 - Changed inside `photo_manager/` for the ✨ edited mark: `metadata.READ_TAGS`/`Meta.edited`/`EDITED_MARK`
   (EXIF ProcessingSoftware) and `grid.paint_flags` (draws ✨ bottom-right).
 - `zoom.py`: mouse-wheel zoom/pan, used by the Edit window and patched into Photo Manager's preview CropCanvas.
+- `android/`: the Android companion app (Kotlin; user's choice). `core/` is plain Kotlin and tested here
+  (`gradle -p android :core:test`): Photo Manager's tag places (XMP dc:subject + IPTC keywords, xmp:Label,
+  xmp:Rating 5 = Star, xmpDM:good = Bookmark), templates/rename pattern, the edit maths (port of photo_edit.py),
+  the ✨ mark as XMP photoshop:History. `app/` (Compose) is built by .github/workflows/android.yml (no Android
+  SDK here); releases are `android-<android/version.txt>`. Sync: every change is done to the phone's photo and
+  queued (SyncQueue) to be done to the same photo in OneDrive's Camera Roll (Microsoft Graph, device-code
+  sign-in, the user's own Azure app ID). `media_manager/companion.py` writes OneDrive\Media Manager\companion.json.
 - Each part keeps its own settings file, so the user's existing Photo/Music settings carry over.
 - Tests: `python -m pytest` (`tests/photo`, `tests/music`, `tests/shell`); GUI tests run offscreen.
   ffmpeg in `vendor/ffmpeg` or on PATH, ExifTool in `vendor/exiftool`.

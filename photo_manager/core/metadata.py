@@ -26,6 +26,7 @@ READ_TAGS = [
     "-Duration#",  # videos: length in seconds (# = plain number)
     "-Composite:ImageSize",
     "-EXIF:ProcessingSoftware",  # Media Manager: "Media Manager edit" on photos saved from its Edit window
+    "-XMP-photoshop:History",    # … and from the Android companion app (it can't write that EXIF tag)
 ]
 
 # Written into photos saved from Media Manager's Edit window (they get a ✨ in the corner).
@@ -146,7 +147,8 @@ def parse_meta(data: dict) -> Meta:
             if meta.duration:
                 break
     meta.image_size = str(data.get("Composite:ImageSize") or "").replace(" ", "x")
-    meta.edited = str(data.get("EXIF:ProcessingSoftware") or "").startswith(EDITED_MARK)
+    meta.edited = any(str(data.get(key) or "").startswith(EDITED_MARK)
+                      for key in ("EXIF:ProcessingSoftware", "XMP:History"))
     return meta
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- For the Android companion app: Media Manager keeps OneDrive › Media Manager › companion.json up to date (your
+  keyword sets, rename pattern, "date from file name" templates and last edit), so the phone uses the same ones.
+- Photos edited on the phone show ✨ too (the phone marks them in XMP photoshop:History, as it can't write the
+  EXIF tag the PC uses).
+
 ## 0.5.2
 
 - Shift+P opens and closes the big preview again, for photos too (Shift+E is Edit).

@@ -7,3 +7,7 @@ dist/
 vendor/
 *.spec
 .ruff_cache/
+android/.gradle/
+android/**/build/
+android/local.properties
+android/.kotlin/
