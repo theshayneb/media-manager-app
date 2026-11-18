@@ -608,6 +608,7 @@ def test_no_big_preview_for_photos_crop_delete_and_move_in_edit(tmp_path, monkey
     pics.mkdir()
     for name in ("a.jpg", "b.jpg", "c.jpg"):
         Image.new("RGB", (80, 60), (120, 120, 120)).save(pics / name)
+    (pics / "d.mp4").write_bytes(b"")
     trashed = []
     monkeypatch.setattr("send2trash.send2trash", lambda p: trashed.append(p) or Path(p).unlink())
     win = build_window()
@@ -628,9 +629,14 @@ def test_no_big_preview_for_photos_crop_delete_and_move_in_edit(tmp_path, monkey
     assert not any(b.isVisible() and b.text().startswith("Close") for b in edit.view.findChildren(QPushButton))
     edit.view.reject()
     assert win.folders_dock.isVisible() and photos.stack.currentWidget() is photos.grid
-    photos.open_preview()  # Shift+P / right-click → Preview
-    assert edit.active
-    edit.view.reject()
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtTest import QTest
+
+    photos.grid.setFocus()
+    QTest.keyClick(photos.grid, _Qt.Key.Key_P, _Qt.KeyboardModifier.ShiftModifier)  # Shift+P: the big preview
+    assert photos.previewing and not edit.active and not win.folders_dock.isVisible()
+    QTest.keyClick(photos.preview, _Qt.Key.Key_P, _Qt.KeyboardModifier.ShiftModifier)  # and Shift+P closes it
+    assert not photos.previewing and win.folders_dock.isVisible()
     # The big preview (still there for videos and comparing) hides Folders and has no Close button.
     photos.grid.select_paths([a, str(pics / "b.jpg")], current=a)
     photos.open_preview()
@@ -638,6 +644,13 @@ def test_no_big_preview_for_photos_crop_delete_and_move_in_edit(tmp_path, monkey
     assert not any(b.isVisible() and b.text().startswith("Close") for b in photos.preview.findChildren(QPushButton))
     photos.close_preview()
     assert win.folders_dock.isVisible()
+
+    # Double-clicking a video opens the big preview.
+    video = str(pics / "d.mp4")
+    photos.grid.select_paths([video], current=video)
+    photos.grid.activated.emit(photos.model.index(photos.model.row_of(video)))
+    assert photos.previewing and not edit.active
+    photos.close_preview()
 
     # Crop in the Edit view: Crop (C), a box, Save crop: the file is cropped, the sliders kept.
     photos.grid.select_paths([a], current=a)

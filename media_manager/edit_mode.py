@@ -123,13 +123,11 @@ class EditMode:
 
     # ---------------------------------------------------------------- the big preview's jobs
     def _replace_big_preview(self) -> None:
-        """Photos open in Edit (double-click, Enter, Shift+P, right-click → Preview / Crop…); the big
-        preview is left for videos and for comparing several photos side by side."""
-        from PySide6.QtGui import QKeySequence, QShortcut
+        """Double-click / Enter: a photo opens in Edit, a video (or any other file) in the big preview.
+        Shift+P still opens and closes the big preview, as before. Right-click → Crop… opens Edit, cropping."""
         from PySide6.QtWidgets import QPushButton
 
         photos = self.photos
-        open_viewer, open_preview = photos.open_viewer, photos.open_preview
 
         def one_photo() -> str:
             paths = photos.grid.selected_paths()
@@ -138,13 +136,12 @@ class EditMode:
                 return current
             return ""
 
-        def open_or_edit() -> None:  # double-click / Enter
+        def open_it() -> None:  # double-click / Enter
             path = one_photo()
-            self.enter(path) if path else open_viewer()
-
-        def preview_or_edit() -> None:  # Shift+P / right-click → Preview
-            path = one_photo()
-            self.enter(path) if path else open_preview()
+            if path:
+                self.enter(path)
+            elif photos.grid.current_path():
+                photos.open_preview()
 
         def crop() -> None:  # right-click → Crop…
             path = one_photo()
@@ -153,16 +150,11 @@ class EditMode:
                 self.view.start_crop()
 
         photos.grid.activated.disconnect()
-        photos.grid.activated.connect(lambda _index: open_or_edit())
-        photos.open_preview = preview_or_edit
+        photos.grid.activated.connect(lambda _index: open_it())
         photos.crop_current = crop
-        for shortcut in photos.findChildren(QShortcut):
-            if shortcut.key() == QKeySequence("Shift+P"):
-                shortcut.activated.disconnect()
-                shortcut.activated.connect(preview_or_edit)
         for button in photos.preview.findChildren(QPushButton):
             if button.text().startswith("Close"):
-                button.hide()  # Esc still closes it
+                button.hide()  # Esc (or Shift+P) still closes it
 
     def _crop(self, path: str, box: tuple, as_copy: bool) -> None:
         """Crop from the Edit view: Photos crops the file (on its file thread); then the photo is shown again,

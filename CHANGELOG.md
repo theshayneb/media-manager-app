@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2
+
+- Shift+P opens and closes the big preview again, for photos too (Shift+E is Edit).
+- Double-clicking (or Enter on) a photo opens Edit; a video opens the big preview.
+
 ## 0.5.1
 
 - Fixed: Sharpness hardly did anything (about 0.3/255 on a phone photo, invisible). It now sharpens about 4 px
