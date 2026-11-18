@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1
+
+- Movies & TV: when a video is dropped into one of your folders, the folder turns orange in the Folders list with
+  "● N new" (hover for the names), and a note pops up by the clock (click it to open the folder). Opening the
+  folder clears it. Folders are checked every minute; videos you move there with Move to… don't count as new.
+- companion.json (for the Android app) moved to OneDrive › Documents › Phone › Media Manager; the old
+  OneDrive › Media Manager folder is removed.
+
 ## 0.6.0
 
 - For the Android companion app: Media Manager keeps OneDrive › Media Manager › companion.json up to date (your

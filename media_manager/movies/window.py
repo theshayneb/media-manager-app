@@ -117,6 +117,8 @@ class PlanDialog(QDialog):
 
 class MoviesWindow(QMainWindow):
     folders_changed = Signal()
+    seen = Signal(str, list)   # a folder was opened: (folder, every video in it) are no longer new
+    placed = Signal(list)      # videos moved by Move to (not new where they landed)
 
     def __init__(self, settings: MediaSettings):
         super().__init__()
@@ -300,6 +302,8 @@ class MoviesWindow(QMainWindow):
             if gen != self._gen:
                 return
             self.videos = videos or []
+            if not error:
+                self.seen.emit(folder, [v.path for v in self.videos])
             self._fill()
             self.status.setText(error or f"{len(self.videos)} videos")
 
@@ -422,8 +426,12 @@ class MoviesWindow(QMainWindow):
         if not folder:
             return
         self._release(paths)
-        self.bg.run(lambda: files.move(paths, folder),
-                    lambda res, err: self._report("Moved", len((res or ({}, []))[0]), (res or ({}, []))[1]))
+        def done(res, err) -> None:  # type: ignore[no-untyped-def]
+            moved, failures = res or ({}, [])
+            self.placed.emit(list(moved.values()))
+            self._report("Moved", len(moved), failures)
+
+        self.bg.run(lambda: files.move(paths, folder), done)
 
     def delete_selected(self) -> None:
         paths = self.selected_paths()

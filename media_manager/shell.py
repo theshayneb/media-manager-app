@@ -28,11 +28,14 @@ from photo_manager.ui.folders import dropped_files, wants_copy
 from photo_manager.ui.main_window import MainWindow as PhotoWindow
 
 from . import __version__, bars, scrub
+from .movies import watch
 from .movies.window import KINDS, MoviesWindow
 from .settings import MediaSettings
 
 GROUPS = [("photos", "📷  PHOTOS & VIDEOS"), ("music", "🎵  MUSIC"), ("movies", "🎬  MOVIES & TV")]
 KIND_ROLE = Qt.ItemDataRole.UserRole
+NEW_COLOUR = "#f0a830"   # a Movies & TV folder with new videos in it
+WATCH_EVERY_MS = 60_000  # how often the Movies & TV folders are checked for new videos
 KEY_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
@@ -177,6 +180,7 @@ class MediaWindow(QMainWindow):
         self._wrap(self.music, "_fill_views")
         self._wrap(self.photos, "_fill_favorites")
         self.movies.folders_changed.connect(self.fill)
+        self._watch_new_videos()
         self.fill()
         QTimer.singleShot(50, self._restore)
         QTimer.singleShot(2000, self._write_companion)  # for the Android app, through OneDrive
@@ -206,8 +210,16 @@ class MediaWindow(QMainWindow):
         if not photos:
             photos = [("photo-open", "＋ Open a folder…", "Open a photo folder (📂 in the top bar adds it here)")]
         music = [(d["key"], d["label"], self.music.folder(d["key"])) for d in self.music.view_defs()]
-        movies = [("movie:" + f["path"], f"{'📺' if f.get('kind') == 'tv' else '🎞'} {f.get('label') or f['path']}",
-                   f"{KINDS.get(f.get('kind', 'movies'))}: {f['path']}") for f in self.media.movie_folders]
+        movies = []
+        for f in self.media.movie_folders:
+            label = f"{'📺' if f.get('kind') == 'tv' else '🎞'} {f.get('label') or f['path']}"
+            tip = f"{KINDS.get(f.get('kind', 'movies'))}: {f['path']}"
+            new = self.new_videos.get(f["path"], [])
+            if new:  # dropped in since you last looked (cleared when the folder is opened)
+                label += f"   ● {len(new)} new"
+                tip += "\n\nNew:\n" + "\n".join(os.path.basename(p) for p in new[:15]) + \
+                       (f"\n…and {len(new) - 15} more" if len(new) > 15 else "")
+            movies.append(("movie:" + f["path"], label, tip))
         if not movies:
             movies = [("movie-add", "＋ Add a folder…", "Add a Movies or TV Shows folder")]
         return {"photos": photos, "music": music, "movies": movies}
@@ -231,6 +243,11 @@ class MediaWindow(QMainWindow):
                 item.setData(KIND_ROLE, kind)
                 item.setData(KEY_ROLE, key)
                 item.setToolTip(tip)
+                if kind == "movies" and self.new_videos.get(key[6:]):
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                    item.setForeground(QColor(NEW_COLOUR))
                 self.list.addItem(item)
                 if (kind, key) == keep:
                     self.list.setCurrentItem(item)
@@ -390,6 +407,68 @@ class MediaWindow(QMainWindow):
         if not menu.isEmpty():
             menu.exec(self.list.mapToGlobal(pos))
 
+    # ------------------------------------------------------------ new videos in Movies & TV
+    def _watch_new_videos(self) -> None:
+        """Every minute, look for videos dropped into the Movies & TV folders: the folder shows "● N new"
+        in the Folders list (and a note pops up by the clock) until it's opened."""
+        from music_manager.ui.workers import Background
+
+        self.new_videos: dict[str, list[str]] = {}
+        self.watch = watch.Watch(self.media.movie_seen)
+        self.watch_bg = Background(1)
+        self._watching = False
+        self.movies.seen.connect(self._videos_seen)
+        self.movies.placed.connect(self.watch.add_seen)
+        self.movies.folders_changed.connect(lambda: QTimer.singleShot(0, self.check_new_videos))
+        self.tray.messageClicked.connect(self._open_new_videos)
+        self.watch_timer = QTimer(self)
+        self.watch_timer.timeout.connect(self.check_new_videos)
+        self.watch_timer.start(WATCH_EVERY_MS)
+        QTimer.singleShot(3000, self.check_new_videos)
+
+    def check_new_videos(self) -> None:
+        if self._watching:
+            return
+        folders = [f["path"] for f in self.media.movie_folders]
+        self.watch.forget(folders)
+        self._watching = True
+        self.watch_bg.run(lambda: watch.scan(folders), self._scanned)
+
+    def _scanned(self, found, error) -> None:  # type: ignore[no-untyped-def]
+        self._watching = False
+        if not found:
+            return
+        names = {f["path"]: f.get("label") or os.path.basename(f["path"]) for f in self.media.movie_folders}
+        before = {k: len(v) for k, v in self.new_videos.items()}
+        news: list[str] = []
+        for folder, current in found.items():
+            new = self.watch.new(folder, current)
+            if new:
+                self.new_videos[folder] = new
+            else:
+                self.new_videos.pop(folder, None)
+            if len(new) > before.get(folder, 0):
+                news.append(f"{names.get(folder, folder)}: {len(new)} new video{'s' if len(new) != 1 else ''}")
+        if {k: len(v) for k, v in self.new_videos.items()} != before:
+            self.fill()
+        if news and self.tray.isVisible():
+            self.tray.showMessage("New videos", "\n".join(news), QSystemTrayIcon.MessageIcon.Information, 10_000)
+
+    def _videos_seen(self, folder: str, current: list) -> None:
+        """A folder was opened in Movies & TV: everything in it has been seen."""
+        self.watch.mark_seen(folder, current)
+        if self.new_videos.pop(folder, None):
+            self.fill()
+
+    def _open_new_videos(self) -> None:
+        """The "New videos" note was clicked: show the (first) folder with new videos."""
+        self.show_from_tray()
+        folder = next(iter(self.new_videos), None)
+        item = self._item("movies", "movie:" + folder) if folder else None
+        if item is not None:
+            self.list.setCurrentItem(item)
+            self._clicked(item)
+
     # ------------------------------------------------------------ the tray
     def _build_tray(self) -> None:
         """The icon by the clock: minimizing hides the window there (click the icon to bring it back)."""
@@ -451,6 +530,8 @@ class MediaWindow(QMainWindow):
         self.media.window_state = bytes(self.saveState().toBase64()).decode()
         self._remember_widths()
         self._write_companion()
+        self.watch_timer.stop()
+        self.watch_bg.shutdown(5000)
         for part in (self.movies, self.music, self.photos):
             part.close()  # each saves its own settings and stops its work
         try:

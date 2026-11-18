@@ -680,3 +680,45 @@ def test_no_big_preview_for_photos_crop_delete_and_move_in_edit(tmp_path, monkey
     assert layout.indexOf(win.move_btn) > layout.indexOf(photos.sidebar.sections["rename"])
     assert 'section="true"' in win.details_dock.styleSheet() and "11pt" in win.details_dock.styleSheet()
     win.close()
+
+
+def test_new_videos_are_flagged_until_the_folder_is_opened(tmp_path):
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+
+    movies, tv = tmp_path / "Movies", tmp_path / "TV"
+    movies.mkdir()
+    tv.mkdir()
+    (movies / "Old.Movie.2001.mkv").write_bytes(b"x")
+    _music_folders(tmp_path)
+    s = MediaSettings.load()
+    s.movie_folders = [{"path": str(movies), "label": "Movies", "kind": "movies"},
+                       {"path": str(tv), "label": "TV Shows", "kind": "tv"}]
+    s.save()
+
+    win = build_window()
+    win.show()
+    win.check_new_videos()  # the first look only learns what's there
+    assert _wait(lambda: str(movies) in win.media.movie_seen and not win._watching)
+    assert not win.new_videos
+
+    (movies / "New.Movie.2024.mkv").write_bytes(b"x")
+    (movies / "Another.2023.mp4").write_bytes(b"x")
+    win.check_new_videos()
+    assert _wait(lambda: str(movies) in win.new_videos)
+    item = win._item("movies", "movie:" + str(movies))
+    assert item.text().strip().endswith("● 2 new") and item.font().bold()
+    assert "New.Movie.2024.mkv" in item.toolTip()
+    assert "new" not in win._item("movies", "movie:" + str(tv)).text()
+
+    # Moving a video with Move to… into another watched folder doesn't make it new there.
+    win.watch.add_seen([str(tv / "Moved.S01E01.mkv")])
+    (tv / "Moved.S01E01.mkv").write_bytes(b"x")
+
+    win._clicked(item)  # opening the folder sees them
+    assert _wait(lambda: str(movies) not in win.new_videos)
+    assert "new" not in win._item("movies", "movie:" + str(movies)).text()
+    win.check_new_videos()
+    assert _wait(lambda: not win._watching)
+    assert not win.new_videos
+    win.close()

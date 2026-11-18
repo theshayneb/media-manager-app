@@ -7,7 +7,7 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
 - `music_manager/` — Music Manager (theshayneb/music-manger), copied as it is; same rule.
 - `media_manager/` — the shell: `app.py` (start-up, `--self-test`), `shell.py` (`MediaWindow`: one grouped
   Folders list + a QStackedWidget with the three parts), `settings.py` (`%APPDATA%\MediaManager`),
-  `movies/` (Movies & TV: `naming.py`, `files.py`, `window.py`).
+  `movies/` (Movies & TV: `naming.py`, `files.py`, `window.py`, `watch.py` = the "● N new" alert).
 - `bars.py` lays out every section's top bar the same way (user's "Option A"): it re-orders Photo/Music's
   own toolbar actions and widgets (shortcuts kept) and adds the 📂 folder button, ⚙ ▾, Photos' search and
   Music's Move to. Photos' menu row is hidden. Music's Tags and Photos' Details docks live in `MediaWindow`.
