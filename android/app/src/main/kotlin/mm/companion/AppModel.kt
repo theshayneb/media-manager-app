@@ -9,6 +9,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -56,6 +58,59 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun app() = getApplication<Application>()
+
+    // ---------------------------------------------------------------- OneDrive sign-in
+    // Here (not in the Settings screen) so it keeps waiting while you're in the browser entering the code,
+    // even if Android rebuilds the screen meanwhile; and checked again the moment you come back.
+    var signedIn by mutableStateOf(drive.signedIn)
+    var signInCode by mutableStateOf(drive.pendingSignIn())
+    var signInProblem by mutableStateOf("")
+    private var signInJob: Job? = null
+
+    init { if (signInCode != null) checkSignIn() }
+
+    fun startSignIn() {
+        signInProblem = ""
+        viewModelScope.launch {
+            try {
+                signInCode = withContext(Dispatchers.IO) { drive.startSignIn() }
+                checkSignIn()
+            } catch (e: Exception) {
+                signInProblem = e.message ?: "Couldn't start sign-in"
+            }
+        }
+    }
+
+    /** Ask Microsoft now whether the code has been entered, then keep asking until it has (or runs out). */
+    fun checkSignIn() {
+        val c = signInCode ?: return
+        signInJob?.cancel()
+        signInJob = viewModelScope.launch {
+            while (System.currentTimeMillis() < c.expiresAt) {
+                val done = withContext(Dispatchers.IO) { runCatching { drive.finishSignIn(c) } }
+                if (done.isFailure) {
+                    signInProblem = done.exceptionOrNull()?.message ?: "Sign-in failed"
+                    signInCode = null
+                    return@launch
+                }
+                if (done.getOrDefault(false)) {
+                    signedIn = true
+                    signInCode = null
+                    syncNow()
+                    return@launch
+                }
+                delay(c.interval * 1000L)
+            }
+            drive.cancelSignIn()
+            signInCode = null
+            signInProblem = "The code ran out; try again."
+        }
+    }
+
+    fun signOut() {
+        drive.signOut()
+        signedIn = false
+    }
 
     fun reload() = viewModelScope.launch {
         val list = withContext(Dispatchers.IO) { store.folders() }

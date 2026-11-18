@@ -32,10 +32,24 @@ class OneDrive(private val context: Context) {
     fun startSignIn(): DeviceCode {
         require(clientId.isNotBlank()) { "Enter the Microsoft app ID first (see Settings)." }
         val o = postForm("$LOGIN/devicecode", mapOf("client_id" to clientId, "scope" to SCOPE))
-        return DeviceCode(o.getString("user_code"), o.getString("verification_uri"), o.getString("device_code"),
+        val code = DeviceCode(o.getString("user_code"), o.getString("verification_uri"), o.getString("device_code"),
             o.optInt("interval", 5), System.currentTimeMillis() + o.optInt("expires_in", 900) * 1000L,
             o.optString("message"))
+        // Kept, so the app still finishes signing in if Android closed it while you were in the browser.
+        prefs.edit().putString("pending", JSONObject().put("user", code.userCode).put("uri", code.verificationUri)
+            .put("device", code.deviceCode).put("interval", code.interval).put("expires", code.expiresAt).toString())
+            .apply()
+        return code
     }
+
+    /** The sign-in code still waiting for you to enter it (if any). */
+    fun pendingSignIn(): DeviceCode? = runCatching {
+        val o = JSONObject(prefs.getString("pending", null) ?: return null)
+        DeviceCode(o.getString("user"), o.getString("uri"), o.getString("device"), o.getInt("interval"),
+            o.getLong("expires"), "")
+    }.getOrNull()?.takeIf { System.currentTimeMillis() < it.expiresAt }
+
+    fun cancelSignIn() = prefs.edit().remove("pending").apply()
 
     /** True once signed in; false while still waiting for you to enter the code. */
     fun finishSignIn(code: DeviceCode): Boolean {
@@ -44,9 +58,11 @@ class OneDrive(private val context: Context) {
                 "client_id" to clientId, "device_code" to code.deviceCode))
         } catch (e: GraphError) {
             if (e.body.contains("authorization_pending") || e.body.contains("slow_down")) return false
+            cancelSignIn()
             throw e
         }
         storeTokens(o)
+        cancelSignIn()
         runCatching {
             val me = get("/me/drive")
             prefs.edit().putString("account", me.optJSONObject("owner")?.optJSONObject("user")?.optString("displayName") ?: "").apply()

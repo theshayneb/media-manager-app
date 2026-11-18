@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
         val was = allowed
         allowed = Environment.isExternalStorageManager()
         if (allowed && !was) model.start()
+        model.checkSignIn()  // back from the browser after entering the OneDrive code
     }
 
     private fun askForAccess() {

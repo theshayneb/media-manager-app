@@ -21,7 +21,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,35 +32,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen(model: AppModel) {
     val context = LocalContext.current
     val drive = model.drive
-    var signedIn by remember { mutableStateOf(drive.signedIn) }
+    val signedIn = model.signedIn
     var clientId by remember { mutableStateOf(drive.clientId) }
-    var code by remember { mutableStateOf<OneDrive.DeviceCode?>(null) }
-    var problem by remember { mutableStateOf("") }
+    val code = model.signInCode
+    val problem = model.signInProblem
     var entries by remember { mutableStateOf(model.queue.all()) }
-
-    LaunchedEffect(code) {
-        val c = code ?: return@LaunchedEffect
-        while (System.currentTimeMillis() < c.expiresAt) {
-            delay(c.interval * 1000L)
-            val done = withContext(Dispatchers.IO) { runCatching { drive.finishSignIn(c) } }
-            if (done.isFailure) { problem = done.exceptionOrNull()?.message ?: "Sign-in failed"; code = null; return@LaunchedEffect }
-            if (done.getOrDefault(false)) {
-                signedIn = true; code = null
-                model.syncNow()
-                return@LaunchedEffect
-            }
-        }
-        code = null
-        problem = "The code ran out; try again."
-    }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().background(Panel).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -74,18 +54,13 @@ fun SettingsScreen(model: AppModel) {
             Spacer(Modifier.height(10.dp))
             if (signedIn) {
                 Text("Signed in" + drive.account.let { if (it.isNotEmpty()) " as $it" else "" })
-                OutlinedButton(onClick = { drive.signOut(); signedIn = false }) { Text("Sign out") }
+                OutlinedButton(onClick = { model.signOut() }) { Text("Sign out") }
             } else {
                 OutlinedTextField(clientId, { clientId = it; drive.clientId = it }, Modifier.fillMaxWidth(),
                     label = { Text("Microsoft app ID") }, singleLine = true)
                 val c = code
                 if (c == null) {
-                    Button(onClick = {
-                        problem = ""
-                        Thread {
-                            try { code = drive.startSignIn() } catch (e: Exception) { problem = e.message ?: "Couldn't start sign-in" }
-                        }.start()
-                    }, enabled = clientId.isNotBlank(), modifier = Modifier.padding(top = 8.dp)) { Text("Sign in to OneDrive") }
+                    Button(onClick = { model.startSignIn() }, enabled = clientId.isNotBlank(), modifier = Modifier.padding(top = 8.dp)) { Text("Sign in to OneDrive") }
                 } else {
                     Text("\nOn any device, go to ${c.verificationUri} and enter this code:", fontSize = 14.sp)
                     Text(c.userCode, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp))
@@ -102,7 +77,7 @@ fun SettingsScreen(model: AppModel) {
             if (problem.isNotEmpty()) Text(problem, color = Color(0xFFE0A040), fontSize = 13.sp)
 
             Title("Sync")
-            Text(if (entries.isEmpty()) "Everything is synced." else "${entries.size} change${if (entries.size == 1) "" else "s"} waiting:")
+            Text(if (!signedIn) "Not signed in to OneDrive yet, so nothing can sync." else if (entries.isEmpty()) "Everything is synced." else "${entries.size} change${if (entries.size == 1) "" else "s"} waiting:")
             for (e in entries.take(30)) {
                 Text("• ${e.name}: ${e.change::class.simpleName}" + if (e.error.isNotEmpty()) " — ${e.error}" else "",
                     fontSize = 12.sp, color = Dim)
