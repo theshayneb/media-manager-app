@@ -75,8 +75,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             try {
                 signInCode = withContext(Dispatchers.IO) { drive.startSignIn() }
                 checkSignIn()
-            } catch (e: Exception) {
+            } catch (e: OneDrive.GraphError) {
                 signInProblem = e.message ?: "Couldn't start sign-in"
+            } catch (e: Exception) {
+                signInProblem = "Couldn't reach Microsoft (is the phone online?): ${e.message}"
             }
         }
     }
@@ -88,6 +90,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         signInJob = viewModelScope.launch {
             while (System.currentTimeMillis() < c.expiresAt) {
                 val done = withContext(Dispatchers.IO) { runCatching { drive.finishSignIn(c) } }
+                val error = done.exceptionOrNull()
+                if (error != null && error !is OneDrive.GraphError) {
+                    // No connection for a moment (Android often cuts it off while the app is in the background,
+                    // e.g. while you're in the browser): keep waiting and try again.
+                    signInProblem = "No internet connection right now; still waiting…"
+                    delay(c.interval * 1000L)
+                    continue
+                }
+                signInProblem = ""
                 if (done.isFailure) {
                     signInProblem = done.exceptionOrNull()?.message ?: "Sign-in failed"
                     signInCode = null
