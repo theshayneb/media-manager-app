@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -271,9 +272,13 @@ private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, hol
         return Rect(Offset((area.width - w) / 2 + offset.x, (area.height - h) / 2 + offset.y), Size(w, h))
     }
 
-    Canvas(Modifier.fillMaxSize().pointerInput(picking, cropping, crop, ratio) {
+    // The crop box as it is now, read when a finger goes down. (It isn't a key of pointerInput: each change
+    // restarted the gesture, so the box stopped after the first move.)
+    val currentCrop by rememberUpdatedState(crop)
+    Canvas(Modifier.fillMaxSize().pointerInput(picking, cropping, ratio) {
         awaitEachGesture {
             val down = awaitFirstDown()
+            val crop = currentCrop
             val rect = fitted()
             if (picking) {
                 if (rect.contains(down.position)) onPick((down.position.x - rect.left) / rect.width, (down.position.y - rect.top) / rect.height)

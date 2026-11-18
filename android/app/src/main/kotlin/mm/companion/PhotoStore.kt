@@ -107,14 +107,22 @@ class PhotoStore(private val context: Context) {
 
     fun read(photo: Photo): ByteArray = File(photo.path).readBytes()
 
-    /** Replace the photo's file (written beside it first, so a failure never leaves half a photo). */
+    /**
+     * Replace the photo's contents, in place. (Not by writing a new file beside it and renaming it over the photo:
+     * Android then treats it as a different photo, and OneDrive's camera backup waits forever for the old one.)
+     * A copy is kept in the app's cache until it's written, so a failure puts the photo back as it was.
+     */
     suspend fun write(photo: Photo, bytes: ByteArray) {
         val file = File(photo.path)
-        val tmp = File(file.parentFile, ".${file.name}.saving")
-        tmp.writeBytes(bytes)
-        if (!tmp.renameTo(file)) {
-            file.writeBytes(bytes)
-            tmp.delete()
+        val backup = File(context.cacheDir, "saving-${photo.id}")
+        file.copyTo(backup, overwrite = true)
+        try {
+            java.io.FileOutputStream(file).use { it.write(bytes); it.fd.sync() }
+        } catch (e: Exception) {
+            runCatching { backup.copyTo(file, overwrite = true) }
+            throw e
+        } finally {
+            backup.delete()
         }
         scan(file.path)
     }
