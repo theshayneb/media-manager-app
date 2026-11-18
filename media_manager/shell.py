@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMenu,
+    QPushButton,
     QStackedWidget,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -140,12 +141,24 @@ class MediaWindow(QMainWindow):
         self.photos.removeDockWidget(self.details_dock)
         self.details_dock.setTitleBarWidget(None)  # a title to drag it by
         # Photo Manager styles its chips and label buttons on its window; the panel keeps those styles here.
-        self.details_dock.setStyleSheet(self.photos.styleSheet())
+        self.details_dock.setStyleSheet(
+            self.photos.styleSheet()
+            # The section headings (Labels, Keywords, Date taken, Rename…) a little bigger (the user's request).
+            + '\nQToolButton[section="true"] { font-size: 11pt; padding: 6px 4px; }')
+        # A "Move to…" button at the bottom of the panel, under Rename: the same as right-click → Move to….
+        move = QPushButton("Move to…")
+        move.setToolTip("Move the selected photos to another folder (Ctrl+M)")
+        move.clicked.connect(lambda: self.photos.move_selected())
+        sidebar = self.photos.sidebar.layout()
+        sidebar.insertSpacing(sidebar.count() - 1, 8)
+        sidebar.insertWidget(sidebar.count() - 1, move)
+        self.move_btn = move
         self._remember_collapsed()
 
         from .edit_mode import EditMode
 
         self.edit = EditMode(self)  # Photos' Edit view: its sliders go where the Folders panel is
+        self.photos.stack.currentChanged.connect(lambda _i: self._photo_page())
         self.setCentralWidget(self.stack)
         self.setDockOptions(QMainWindow.DockOption.AnimatedDocks | QMainWindow.DockOption.AllowNestedDocks)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.folders_dock)
@@ -279,8 +292,15 @@ class MediaWindow(QMainWindow):
         self.details_dock.setVisible(kind == "photos")
         if self.edit.active:  # editing a photo: its sliders show with Photos only, in the Folders panel's place
             self.edit.dock.setVisible(kind == "photos")
-            self.folders_dock.setVisible(kind != "photos")
+        self._photo_page()
         QTimer.singleShot(0, self._restore_widths)
+
+    def _photo_page(self) -> None:
+        """The Folders panel shows only with Photos' list (not in Edit or the big preview)."""
+        if self.kind == "photos":
+            self.folders_dock.setVisible(self.photos.stack.currentWidget() is self.photos.grid)
+        elif not self.folders_dock.isVisible():
+            self.folders_dock.show()
 
     # ------------------------------------------------------------ panel widths
     def _docks(self) -> list[QDockWidget]:

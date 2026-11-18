@@ -25,7 +25,24 @@ class EditMode:
         self.came_from = None
         self.view.finished.connect(self._finished)
         self.view.navigate.connect(self.go)
+        self.view.crop_requested.connect(self._crop)
+        self.view.crop_settings = self.photos.settings
         self.photos.edit_mode = self
+        self._replace_big_preview()
+        # Deleted (Delete key) or moved (Move to…) while editing: go on to the photo Photos selects next.
+        after_removal = self.photos._after_removal
+
+        def after_removal_then_follow(removed: list[str]) -> None:
+            after_removal(removed)
+            gone = {os.path.normcase(p) for p in removed}
+            if self.active and os.path.normcase(self.view.path) in gone:
+                target = self.photos.grid.current_path()
+                if target and can_edit(target):
+                    self._load(target)
+                else:
+                    self.leave()
+
+        self.photos._after_removal = after_removal_then_follow
         # Opening another folder while editing: first finish with this photo.
         open_folder = self.photos.open_folder
 
@@ -78,16 +95,12 @@ class EditMode:
         self.active = False
         self.dock.hide()
         shell.folders_dock.show()
-        back = self.came_from if self.came_from in (photos.preview, photos.grid) else photos.grid
+        back = photos.grid  # (the big preview is only for videos and comparing now)
         photos.stack.setCurrentWidget(back)
-        if back is photos.preview:
-            photos._preview_show_current()
-            photos.preview.setFocus()
-        else:
-            path = photos.grid.current_path()
-            if path:
-                photos.grid.scrollTo(photos.model.index(photos.model.row_of(path)))
-            photos.grid.setFocus()
+        path = photos.grid.current_path()
+        if path:
+            photos.grid.scrollTo(photos.model.index(photos.model.row_of(path)))
+        photos.grid.setFocus()
         QTimer.singleShot(0, shell._restore_widths)
 
     def leave_asking(self) -> bool:
@@ -107,6 +120,56 @@ class EditMode:
 
     def _title(self) -> None:
         self.dock.setWindowTitle(f"Edit · {os.path.basename(self.view.path)}")
+
+    # ---------------------------------------------------------------- the big preview's jobs
+    def _replace_big_preview(self) -> None:
+        """Photos open in Edit (double-click, Enter, Shift+P, right-click → Preview / Crop…); the big
+        preview is left for videos and for comparing several photos side by side."""
+        from PySide6.QtGui import QKeySequence, QShortcut
+        from PySide6.QtWidgets import QPushButton
+
+        photos = self.photos
+        open_viewer, open_preview = photos.open_viewer, photos.open_preview
+
+        def one_photo() -> str:
+            paths = photos.grid.selected_paths()
+            current = photos.grid.current_path()
+            if len(paths) <= 1 and current and can_edit(current):
+                return current
+            return ""
+
+        def open_or_edit() -> None:  # double-click / Enter
+            path = one_photo()
+            self.enter(path) if path else open_viewer()
+
+        def preview_or_edit() -> None:  # Shift+P / right-click → Preview
+            path = one_photo()
+            self.enter(path) if path else open_preview()
+
+        def crop() -> None:  # right-click → Crop…
+            path = one_photo()
+            if path:
+                self.enter(path)
+                self.view.start_crop()
+
+        photos.grid.activated.disconnect()
+        photos.grid.activated.connect(lambda _index: open_or_edit())
+        photos.open_preview = preview_or_edit
+        photos.crop_current = crop
+        for shortcut in photos.findChildren(QShortcut):
+            if shortcut.key() == QKeySequence("Shift+P"):
+                shortcut.activated.disconnect()
+                shortcut.activated.connect(preview_or_edit)
+        for button in photos.preview.findChildren(QPushButton):
+            if button.text().startswith("Close"):
+                button.hide()  # Esc still closes it
+
+    def _crop(self, path: str, box: tuple, as_copy: bool) -> None:
+        """Crop from the Edit view: Photos crops the file (on its file thread); then the photo is shown again,
+        the sliders as they were."""
+        self.photos.crop_file(path, box, as_copy)
+        if not as_copy:
+            self.photos.bg.run(lambda: None, lambda _r, _e: self.view.reload_image() if self.active else None)
 
     # ---------------------------------------------------------------- saving and moving on
     def _save(self) -> None:
@@ -138,13 +201,17 @@ class EditMode:
         if choice == "save":
             self._save()
             self.view.set_last(self.shell.media.last_edit)
-        self.photos.grid.select_paths([target.path], current=target.path)
+        self._load(target.path)
+
+    def _load(self, path: str) -> None:
+        self.photos.grid.select_paths([path], current=path)
         self.photos.refresh_sidebar()
         try:
-            self.view.load(target.path)
+            self.view.load(path)
         except OSError as exc:
             QMessageBox.warning(self.photos, "Edit", f"Couldn't open the photo:\n{exc}")
             self.leave()
             return
+        self.view.set_last(self.shell.media.last_edit)
         self._title()
         self.view.setFocus()

@@ -11,6 +11,7 @@ from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -19,12 +20,15 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSlider,
+    QStackedWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from photo_manager.core.crop import ASPECT_RATIOS, can_crop, upright_size
 from photo_manager.core.thumbs import open_image
+from photo_manager.ui.preview import CropCanvas
 
 from .photo_edit import SATURATION, SAVED_AS_JPG, Adjustments, apply, auto, white_balance_at
 from .scrub import make_scrubbable
@@ -194,6 +198,7 @@ class EditView(QWidget):
 
     finished = Signal(str)   # "save" or "cancel"
     navigate = Signal(int)   # ← / →: the previous / next photo
+    crop_requested = Signal(str, tuple, bool)  # path, box (upright pixels of the full photo), as a copy
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -287,9 +292,49 @@ class EditView(QWidget):
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # the keys (space, ←/→) stay with the photo
             foot.addWidget(b)
 
+        # Crop, as it was in the big preview: a Crop (C) button over the photo, and its bar while cropping.
+        top = QHBoxLayout()
+        self.caption = QLabel("")
+        top.addWidget(self.caption, 1)
+        self.crop_btn = QPushButton("Crop (C)")
+        self.crop_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.crop_btn.clicked.connect(self.start_crop)
+        top.addWidget(self.crop_btn)
+        self.crop_bar = QWidget()
+        bar = QHBoxLayout(self.crop_bar)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.addWidget(QLabel("Aspect ratio:"))
+        self.ratio = QComboBox()
+        self.ratio.addItems(list(ASPECT_RATIOS))
+        self.ratio.currentTextChanged.connect(lambda _t: self.cropper.set_ratio(self._ratio_value()))
+        bar.addWidget(self.ratio)
+        self.as_copy = QCheckBox("Save as a copy")
+        self.as_copy.setToolTip("Unticked: the cropped photo replaces the original, "
+                                "and the original goes to the Recycle Bin.")
+        self.as_copy.toggled.connect(lambda on: setattr(self.crop_settings, "crop_as_copy", on)
+                                     if self.crop_settings is not None else None)
+        bar.addWidget(self.as_copy)
+        bar.addStretch(1)
+        bar.addWidget(QLabel("Drag to draw · drag edges/corners to adjust"))
+        apply_btn = QPushButton("Save crop (Enter)")
+        apply_btn.clicked.connect(self.apply_crop)
+        cancel_crop = QPushButton("Cancel")
+        cancel_crop.clicked.connect(self.cancel_crop)
+        for b in (apply_btn, cancel_crop):
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            bar.addWidget(b)
+        self.crop_bar.setVisible(False)
+        self.crop_settings = None  # Photo Manager's settings (remembers "Save as a copy"); set by edit_mode
+        self.cropper = CropCanvas()
+        self.pages = QStackedWidget()
+        self.pages.addWidget(self.view)
+        self.pages.addWidget(self.cropper)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 6)
-        layout.addWidget(self.view, 1)
+        layout.addLayout(top)
+        layout.addWidget(self.crop_bar)
+        layout.addWidget(self.pages, 1)
         layout.addLayout(foot)
 
         self._auto: dict[str, int] | None = None
@@ -445,7 +490,58 @@ class EditView(QWidget):
         if os.path.splitext(path)[1].lower() in SAVED_AS_JPG:
             note += " · saved as JPG"
         self.info.setText(f"{os.path.basename(path)} · {note}")
+        self.caption.setText(os.path.basename(path))
+        self.cancel_crop()
+        self.crop_btn.setEnabled(can_crop(path))
         self.view.update()
+
+    def reload_image(self) -> None:
+        """The photo changed on disk (cropped): show it again, keeping the sliders as they are."""
+        self.original = open_image(self.path, PREVIEW_PIXELS)
+        self._auto, self._cache = None, {}
+        self.view.before = to_qimage(self.original)
+        self.view.zoom.reset()
+        self._render()
+
+    # ---------------------------------------------------------------- crop
+    @property
+    def cropping(self) -> bool:
+        return self.pages.currentWidget() is self.cropper
+
+    def _ratio_value(self) -> float | None:
+        value = ASPECT_RATIOS.get(self.ratio.currentText())
+        if value == "original":
+            w, h = self.cropper.full_size
+            return w / h if h else None
+        return value  # type: ignore[return-value]
+
+    def start_crop(self) -> None:
+        if not self.crop_btn.isEnabled() or self.cropping:
+            return
+        from PySide6.QtGui import QPixmap
+
+        try:
+            full = upright_size(self.path)
+        except Exception:  # noqa: BLE001
+            full = (self.original.width, self.original.height)
+        self.as_copy.setChecked(bool(getattr(self.crop_settings, "crop_as_copy", False)))
+        self.cropper.set_image(QPixmap.fromImage(self.view.after), full)  # what you see, edits and all
+        self.pages.setCurrentWidget(self.cropper)
+        self.crop_bar.setVisible(True)
+        self.cropper.start_crop(self._ratio_value())
+        self.setFocus()
+
+    def cancel_crop(self) -> None:
+        self.crop_bar.setVisible(False)
+        self.cropper.stop_crop()
+        self.pages.setCurrentWidget(self.view)
+
+    def apply_crop(self) -> None:
+        if not self.cropping:
+            return
+        box = self.cropper.crop_box()
+        self.cancel_crop()
+        self.crop_requested.emit(self.path, box, self.as_copy.isChecked())
 
     def set_last(self, values: dict | None) -> None:
         """The sliders of the last photo saved, for "Same as last edit"."""
@@ -498,6 +594,15 @@ class EditView(QWidget):
 
     def keyPressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         key = event.key()
+        if self.cropping:
+            if key == Qt.Key.Key_Escape:
+                self.cancel_crop()
+            elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self.apply_crop()
+            return
+        if key == Qt.Key.Key_C and not event.modifiers():
+            self.start_crop()
+            return
         if key == Qt.Key.Key_E and event.modifiers() == Qt.KeyboardModifier.ShiftModifier:
             self.close_with_shortcut()
             return

@@ -237,7 +237,7 @@ def saturate(image: Image.Image, a: Adjustments) -> Image.Image:
 
 def detail(image: Image.Image, a: Adjustments, cache: dict | None = None) -> Image.Image:
     """Clarity and Sharpness. Their sizes follow the picture's size, so the screen-sized preview looks like
-    the full-size photo it's saved as (about 1.3 px sharpening on a 4032 px phone photo). cache keeps the
+    the full-size photo it's saved as (about 4 px sharpening on a 4032 px phone photo). cache keeps the
     blurred copy and the mid-tone mask between previews while only these two sliders move."""
     import math
 
@@ -255,8 +255,9 @@ def detail(image: Image.Image, a: Adjustments, cache: dict | None = None) -> Ima
             Image.blend(image, cache["blur"], -amount)
         image = Image.composite(moved, image, cache["mids"])
     if a.sharpness:
-        radius = max(0.5, long_side / 3000)
-        image = image.filter(ImageFilter.UnsharpMask(radius=radius, percent=round(a.sharpness * 2.5), threshold=2))
+        # 0.5.1: about 4 px on a 4032 px phone photo, up to 4x (0.4.3's 1.3 px with a threshold did next to nothing)
+        radius = max(0.8, long_side / 1000)
+        image = image.filter(ImageFilter.UnsharpMask(radius=radius, percent=round(a.sharpness * 4), threshold=1))
     return image
 
 

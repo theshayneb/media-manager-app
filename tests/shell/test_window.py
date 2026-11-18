@@ -257,8 +257,8 @@ def test_music_move_to(tmp_path):
     assert _wait(lambda: len(win.music.model.tracks) == 1)
     win.music.selected_paths = lambda: [str(song)]
     bars.move_music(win.music, str(tmp_path / "Library"))
-    assert _wait(lambda: (tmp_path / "Library" / "A - One.mp3").exists() and not song.exists())
-    assert (tmp_path / "Library" / "A - One.txt").exists()  # the lyrics file went along
+    assert _wait(lambda: (tmp_path / "Library" / "A - One.mp3").exists() and not song.exists()
+                 and (tmp_path / "Library" / "A - One.txt").exists())  # the lyrics file went along
     win.close()
 
 
@@ -590,4 +590,80 @@ def test_edit_mode_in_the_main_window(tmp_path, monkeypatch):
     assert edit.active
     edit.view.close_with_shortcut()  # Shift+E with nothing changed: just leaves
     assert not edit.active
+    win.close()
+
+
+def test_no_big_preview_for_photos_crop_delete_and_move_in_edit(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from PIL import Image
+    from PySide6.QtCore import QRectF
+    from PySide6.QtWidgets import QPushButton
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+
+    _music_folders(tmp_path)
+    pics = tmp_path / "pics"
+    pics.mkdir()
+    for name in ("a.jpg", "b.jpg", "c.jpg"):
+        Image.new("RGB", (80, 60), (120, 120, 120)).save(pics / name)
+    trashed = []
+    monkeypatch.setattr("send2trash.send2trash", lambda p: trashed.append(p) or Path(p).unlink())
+    win = build_window()
+    win.resize(1400, 900)
+    win.show()
+    _wait(lambda: False, 0.5)
+    win.show_kind("photos")
+    photos, edit = win.photos, win.edit
+    photos.settings.confirm_delete = False
+    photos.open_folder(str(pics))
+    a = str(pics / "a.jpg")
+    photos.grid.select_paths([a], current=a)
+    assert win.folders_dock.isVisible()
+
+    # Double-click (activated) and Shift+P open Edit, not the big preview; Folders hides.
+    photos.grid.activated.emit(photos.model.index(photos.model.row_of(a)))
+    assert edit.active and photos.stack.currentWidget() is edit.view and not win.folders_dock.isVisible()
+    assert not any(b.isVisible() and b.text().startswith("Close") for b in edit.view.findChildren(QPushButton))
+    edit.view.reject()
+    assert win.folders_dock.isVisible() and photos.stack.currentWidget() is photos.grid
+    photos.open_preview()  # Shift+P / right-click → Preview
+    assert edit.active
+    edit.view.reject()
+    # The big preview (still there for videos and comparing) hides Folders and has no Close button.
+    photos.grid.select_paths([a, str(pics / "b.jpg")], current=a)
+    photos.open_preview()
+    assert photos.previewing and not win.folders_dock.isVisible()
+    assert not any(b.isVisible() and b.text().startswith("Close") for b in photos.preview.findChildren(QPushButton))
+    photos.close_preview()
+    assert win.folders_dock.isVisible()
+
+    # Crop in the Edit view: Crop (C), a box, Save crop: the file is cropped, the sliders kept.
+    photos.grid.select_paths([a], current=a)
+    photos.edit_mode.toggle()
+    edit.view.values["brightness"].setValue(20)
+    edit.view.start_crop()
+    assert edit.view.cropping and edit.view.crop_bar.isVisible()
+    edit.view.cropper.box = QRectF(10, 10, 40, 30)
+    edit.view.as_copy.setChecked(False)
+    edit.view.apply_crop()
+    assert _wait(lambda: not photos.bg.pending, 5)
+    _wait(lambda: False, 0.3)
+    with Image.open(a) as im:
+        assert im.size == (40, 30)
+    assert edit.view.original.size == (40, 30) and edit.view.values["brightness"].value() == 20
+
+    # Delete while editing: to the Recycle Bin, and on to the next photo.
+    edit.view.reset()
+    photos.delete_selected()  # what the Delete key does
+    assert _wait(lambda: not photos.bg.pending and a in trashed, 5)
+    _wait(lambda: False, 0.3)
+    assert edit.active and edit.view.path != a and Path(edit.view.path).exists()
+
+    # Move to… under Rename in the Details panel.
+    assert win.move_btn.text() == "Move to…"
+    layout = photos.sidebar.layout()
+    assert layout.indexOf(win.move_btn) > layout.indexOf(photos.sidebar.sections["rename"])
+    assert 'section="true"' in win.details_dock.styleSheet() and "11pt" in win.details_dock.styleSheet()
     win.close()

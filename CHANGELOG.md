@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1
+
+- Fixed: Sharpness hardly did anything (about 0.3/255 on a phone photo, invisible). It now sharpens about 4 px
+  on a 4032 px photo, up to 4×; the preview matches the saved photo.
+- Photos open in Edit instead of the big preview: double-click, Enter, Shift+P and right-click → Preview.
+  The big preview is left for videos and for comparing several photos; it has no Close button (Esc closes).
+- Crop is in the Edit view, as it was in the big preview: Crop (C) above the photo, then Aspect ratio · Save as
+  a copy · Save crop (Enter) · Cancel. The sliders are kept; right-click → Crop… opens Edit and starts cropping.
+- The Folders panel shows only with the photo list (not in Edit or the big preview).
+- A "Move to…" button at the bottom of the Details panel, under Rename (same as right-click → Move to…).
+- Delete while editing sends the photo to the Recycle Bin and goes on to the next one (Move to… does too).
+- The Details panel's section headings are a little bigger.
+
 ## 0.5.0
 
 - Edit now opens inside the main window, like the big preview: the photo (with Hold for Before · Reset ·

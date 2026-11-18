@@ -202,3 +202,22 @@ def test_brightness():
     assert apply(Image.new("RGB", (1, 1), (0, 0, 0)), Adjustments(brightness=100)).getpixel((0, 0)) == (0, 0, 0)
     dark = Image.linear_gradient("L").resize((64, 64)).point(lambda v: v // 3).convert("RGB")
     assert auto(dark)["brightness"] > 0
+
+
+def test_sharpness_is_visible_on_screen():
+    """0.4.3–0.5.0's sharpening changed a phone photo by about 0.3/255: invisible. It must show when fitted."""
+    import random
+
+    from PIL import ImageChops, ImageDraw, ImageFilter, ImageStat
+
+    random.seed(3)
+    photo = Image.new("RGB", (2400, 1800), (150, 140, 120))
+    d = ImageDraw.Draw(photo)
+    for _ in range(1500):
+        x, y = random.randrange(2400), random.randrange(1800)
+        d.line((x, y, x + random.randrange(-40, 40), y + random.randrange(-40, 40)),
+               fill=tuple(random.randrange(60, 220) for _ in range(3)), width=2)
+    photo = photo.filter(ImageFilter.GaussianBlur(1.0))
+    sharp = apply(photo, Adjustments(sharpness=100))
+    seen = ImageChops.difference(photo.resize((1200, 900)), sharp.resize((1200, 900)))
+    assert ImageStat.Stat(seen.convert("L")).mean[0] > 1.5
