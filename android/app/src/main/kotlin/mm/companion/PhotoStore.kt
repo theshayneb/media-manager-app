@@ -36,7 +36,7 @@ data class Photo(
     val canChange get() = isJpeg || isPng
 }
 
-data class Folder(val id: String, val name: String, val count: Int)
+data class Folder(val id: String, val name: String, val count: Int, val path: String = "")
 
 val EXIF_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
 
@@ -45,21 +45,26 @@ class PhotoStore(private val context: Context) {
     private val resolver get() = context.contentResolver
 
     fun folders(): List<Folder> {
-        val counts = linkedMapOf<String, Pair<String, Int>>()
+        data class Count(val name: String, val path: String, var n: Int)
+        val counts = linkedMapOf<String, Count>()
         resolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            arrayOf(MediaStore.Images.Media.BUCKET_ID, MediaStore.Images.Media.BUCKET_DISPLAY_NAME),
+            arrayOf(MediaStore.Images.Media.BUCKET_ID, MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
+                MediaStore.Images.Media.DATA),
             null, null, "${MediaStore.Images.Media.DATE_TAKEN} DESC",
         )?.use { c ->
             while (c.moveToNext()) {
                 val id = c.getString(0) ?: continue
-                val name = c.getString(1) ?: "?"
-                val (n, count) = counts[id] ?: (name to 0)
-                counts[id] = n to count + 1
+                counts.getOrPut(id) { Count(c.getString(1) ?: "?", c.getString(2)?.let { File(it).parent } ?: "", 0) }.n++
             }
         }
-        return counts.map { (id, v) -> Folder(id, v.first, v.second) }
+        return counts.map { (id, v) -> Folder(id, v.name, v.n, v.path) }
     }
+
+    /** A folder with no photos in it (yet): Android's media library doesn't list it, so it's made from its path.
+     *  Its id is the one Android gives a folder (the lower-case path's hash), so photos put there later show. */
+    fun emptyFolder(path: String) =
+        Folder(path.lowercase(java.util.Locale.ROOT).hashCode().toString(), File(path).name, 0, path)
 
     fun photos(folderId: String): List<Photo> {
         val out = mutableListOf<Photo>()

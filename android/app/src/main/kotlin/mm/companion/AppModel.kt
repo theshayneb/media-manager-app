@@ -123,8 +123,35 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         signedIn = false
     }
 
+    // ---------------------------------------------------------------- folders (favourites first)
+    /** Favourite folders' paths, in the order they were made favourites. */
+    var favorites by mutableStateOf(loadFavorites())
+    private var found = listOf<Folder>()
+
+    private fun loadFavorites(): List<String> = runCatching {
+        val a = org.json.JSONArray(app().getSharedPreferences("folders", 0).getString("favorites", "[]"))
+        (0 until a.length()).map { a.getString(it) }
+    }.getOrDefault(emptyList())
+
+    fun isFavorite(f: Folder) = favorites.any { it.equals(f.path, ignoreCase = true) }
+
+    fun toggleFavorite(f: Folder) {
+        if (f.path.isEmpty()) return
+        favorites = if (isFavorite(f)) favorites.filterNot { it.equals(f.path, ignoreCase = true) } else favorites + f.path
+        app().getSharedPreferences("folders", 0).edit()
+            .putString("favorites", org.json.JSONArray(favorites).toString()).apply()
+        folders = arrange(found)
+    }
+
+    /** Favourites at the top (also when empty), then the rest as Android lists them (most recent first). */
+    private fun arrange(list: List<Folder>): List<Folder> {
+        val favs = favorites.map { path -> list.firstOrNull { it.path.equals(path, true) } ?: store.emptyFolder(path) }
+        return favs + list.filterNot { f -> favorites.any { it.equals(f.path, true) } }
+    }
+
     fun reload() = viewModelScope.launch {
-        val list = withContext(Dispatchers.IO) { store.folders() }
+        found = withContext(Dispatchers.IO) { store.folders() }
+        val list = arrange(found)
         folders = list
         val keep = folder?.let { f -> list.firstOrNull { it.id == f.id } }
         open(keep ?: list.firstOrNull { it.name.equals("Camera", true) } ?: list.firstOrNull())

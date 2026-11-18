@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -93,8 +94,22 @@ private fun TopBar(model: AppModel) {
             Box {
                 TextButton(onClick = { open = true }) { Text("📂 ${model.folder?.name ?: "No photos"} ▾", color = Color.White, fontSize = 17.sp) }
                 DropdownMenu(open, { open = false }) {
-                    for (f in model.folders) DropdownMenuItem(text = { Text("${f.name}  (${f.count})") },
-                        onClick = { open = false; model.open(f) })
+                    val favs = model.folders.count { model.isFavorite(it) }
+                    if (favs > 0) Text("★ FAVOURITES", color = Dim, fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp))
+                    model.folders.forEachIndexed { i, f ->
+                        if (favs > 0 && i == favs) HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                        val fav = model.isFavorite(f)
+                        DropdownMenuItem(
+                            text = { Text("${f.name}  (${"%,d".format(f.count)})") },
+                            onClick = { open = false; model.open(f) },
+                            trailingIcon = {
+                                Text(if (fav) "★" else "☆", fontSize = 22.sp, color = if (fav) Color(0xFFE8C020) else Dim,
+                                    modifier = Modifier.clip(CircleShape).clickable { model.toggleFavorite(f) }
+                                        .padding(horizontal = 10.dp, vertical = 4.dp))
+                            },
+                        )
+                    }
                 }
             }
         }
