@@ -11,6 +11,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -43,7 +46,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Accent, background = Background, surface = Panel)) {
-                Surface(Modifier.fillMaxSize(), color = Background) {
+                // Android 15 draws apps under the status and navigation bars: keep everything clear of them
+                // (and of the keyboard).
+                Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), color = Background) {
                     if (!allowed) AskForAccess { askForAccess() } else App(model)
                 }
             }

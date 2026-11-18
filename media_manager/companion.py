@@ -1,6 +1,6 @@
 """Settings the Android companion app needs, shared through OneDrive: the keyword sets (the phone shows
 their buttons but doesn't edit them), the rename pattern, the "date from file name" templates and the last
-edit. Written to <OneDrive>\\Media Manager\\companion.json when Media Manager starts and closes."""
+edit. Written to <OneDrive>\\Documents\\Phone\\Media Manager\\companion.json when Media Manager starts and closes."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ import json
 import os
 from pathlib import Path
 
-FILE = Path("Media Manager") / "companion.json"
+FILE = Path("Documents") / "Phone" / "Media Manager" / "companion.json"
+OLD_FILE = Path("Media Manager") / "companion.json"  # where 0.6.0 put it (moved, at the user's request)
 
 
 def onedrive_folder() -> Path | None:
@@ -41,6 +42,7 @@ def write(photo_settings, media_settings, folder: Path | None = None) -> Path | 
     text = json.dumps(companion_data(photo_settings, media_settings), indent=2, ensure_ascii=False)
     try:
         if path.exists() and path.read_text(encoding="utf-8") == text:
+            _remove_old(root)
             return path  # unchanged: don't make OneDrive upload it again
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
@@ -48,4 +50,16 @@ def write(photo_settings, media_settings, folder: Path | None = None) -> Path | 
         os.replace(tmp, path)
     except OSError:
         return None
+    _remove_old(root)
     return path
+
+
+def _remove_old(root: Path) -> None:
+    old = root / OLD_FILE
+    try:
+        if old.exists():
+            old.unlink()
+        if old.parent.exists() and not any(old.parent.iterdir()):
+            old.parent.rmdir()
+    except OSError:
+        pass

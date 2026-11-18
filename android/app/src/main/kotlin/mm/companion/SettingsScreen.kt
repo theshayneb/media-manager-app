@@ -113,7 +113,7 @@ fun SettingsScreen(model: AppModel) {
             Title("From your PC")
             val sets = model.shared.keywordSets
             Text(if (sets.isEmpty()) "No keyword sets yet. Open Media Manager on the PC once (it puts them in " +
-                "OneDrive › Media Manager), then Sync now." else "Keyword sets: ${sets.keys.joinToString()}", fontSize = 13.sp)
+                "OneDrive › Documents › Phone › Media Manager), then Sync now." else "Keyword sets: ${sets.keys.joinToString()}", fontSize = 13.sp)
             Text("Rename pattern: ${model.shared.renamePattern}", fontSize = 13.sp)
             Spacer(Modifier.height(30.dp))
             Text("Media Manager companion ${BuildConfig.VERSION_NAME}", color = Dim, fontSize = 12.sp)

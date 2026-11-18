@@ -44,4 +44,4 @@ Changes wait (⚙ shows them) until you're online and the camera upload has put 
 Deletes go to OneDrive's recycle bin, so they can be restored there.
 
 Keyword sets and the rename pattern come from the PC: Media Manager on the PC keeps them in
-**OneDrive › Media Manager › companion.json**.
+**OneDrive › Documents › Phone › Media Manager › companion.json**.

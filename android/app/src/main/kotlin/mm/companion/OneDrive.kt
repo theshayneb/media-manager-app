@@ -166,11 +166,17 @@ class OneDrive(private val context: Context) {
         try { request("DELETE", "$GRAPH/me/drive/items/$id", null, null) } catch (e: GraphError) { if (e.code != 404) throw e }
     }
 
-    /** The Windows app's companion.json (keyword sets, rename pattern…), or null. */
-    fun companion(): String? = try {
-        String(request("GET", "$GRAPH/me/drive/root:/Media%20Manager/companion.json:/content", null, null).second)
-    } catch (e: GraphError) {
-        if (e.code == 404) null else throw e
+    /** The Windows app's companion.json (keyword sets, rename pattern…) from OneDrive › Documents › Phone ›
+     *  Media Manager (or OneDrive › Media Manager, where the PC put it before 0.6.1), or null. */
+    fun companion(): String? {
+        for (path in listOf("Documents/Phone/Media%20Manager/companion.json", "Media%20Manager/companion.json")) {
+            try {
+                return String(request("GET", "$GRAPH/me/drive/root:/$path:/content", null, null).second)
+            } catch (e: GraphError) {
+                if (e.code != 404) throw e
+            }
+        }
+        return null
     }
 
     // ---------------------------------------------------------------- HTTP

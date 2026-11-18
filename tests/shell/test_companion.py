@@ -14,8 +14,12 @@ def test_companion_file_for_the_android_app(tmp_path):
     photos, media = PhotoSettings(), MediaSettings()
     photos.keyword_sets = {"Shayne": ["me", "josh"], "Trips": ["paris"]}
     media.last_edit = {"brightness": 20}
+    old = tmp_path / "Media Manager" / "companion.json"  # where 0.6.0 put it
+    old.parent.mkdir()
+    old.write_text("{}", encoding="utf-8")
     path = companion.write(photos, media, tmp_path)
-    assert path == tmp_path / "Media Manager" / "companion.json"
+    assert path == tmp_path / "Documents" / "Phone" / "Media Manager" / "companion.json"
+    assert not old.exists() and not old.parent.exists()  # moved
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["keyword_sets"] == {"Shayne": ["me", "josh"], "Trips": ["paris"]}
     assert data["rename_pattern"] == photos.rename_pattern and data["last_edit"] == {"brightness": 20}

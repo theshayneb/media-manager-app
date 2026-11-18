@@ -31,7 +31,7 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   the ✨ mark as XMP photoshop:History. `app/` (Compose) is built by .github/workflows/android.yml (no Android
   SDK here); releases are `android-<android/version.txt>`. Sync: every change is done to the phone's photo and
   queued (SyncQueue) to be done to the same photo in OneDrive's Camera Roll (Microsoft Graph, device-code
-  sign-in, the user's own Azure app ID). `media_manager/companion.py` writes OneDrive\Media Manager\companion.json.
+  sign-in, the user's own Azure app ID). `media_manager/companion.py` writes OneDrive\Documents\Phone\Media Manager\companion.json.
 - Each part keeps its own settings file, so the user's existing Photo/Music settings carry over.
 - Tests: `python -m pytest` (`tests/photo`, `tests/music`, `tests/shell`); GUI tests run offscreen.
   ffmpeg in `vendor/ffmpeg` or on PATH, ExifTool in `vendor/exiftool`.
