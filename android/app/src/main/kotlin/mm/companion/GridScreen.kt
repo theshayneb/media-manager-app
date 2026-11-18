@@ -114,7 +114,7 @@ private fun Tile(model: AppModel, p: Photo) {
         .combinedClickable(
             onClick = {
                 if (model.selected.isNotEmpty()) { if (sel) model.selected.remove(p.id) else model.selected[p.id] = true }
-                else if (p.isJpeg) { model.editing = p; model.screen = Screen.Edit }
+                else if (p.canChange) { model.editing = p; model.screen = Screen.Edit }
                 else model.selected[p.id] = true
             },
             onLongClick = { model.selected[p.id] = true },

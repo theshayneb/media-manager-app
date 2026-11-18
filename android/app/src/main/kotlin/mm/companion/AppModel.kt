@@ -171,7 +171,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 for (p in targets) {
                     try {
                         if (change.isTag) {
-                            if (!p.isJpeg) { problems.add("${p.name}: only JPG photos can be tagged"); continue }
+                            if (!p.canChange) { problems.add("${p.name}: only JPG and PNG photos can be tagged"); continue }
                             store.write(p, applyTags(store.read(p), change))
                             fields[p.id] = store.fields(p)
                         } else if (change is Change.DateTaken) {
@@ -259,7 +259,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.Default) {
                     val bytes = store.read(p)
                     val rawCrop = uprightCrop?.let { cropToRaw(it, orientationOf(bytes)) }
-                    val edited = editJpeg(bytes, adjustments, rawCrop)
+                    val edited = editImage(bytes, adjustments, rawCrop)
                     store.keepOriginalInTrash(p, bytes)
                     store.write(p, edited)
                     fields[p.id] = store.fields(p)

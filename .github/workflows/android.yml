@@ -38,11 +38,12 @@ jobs:
           from photo_manager.core.exiftool import ExifTool, find_exiftool
           from photo_manager.core.metadata import READ_TAGS, parse_meta
           with ExifTool(find_exiftool()) as et:
-              [data] = et.read(["android/core/build/interop.jpg"], READ_TAGS)
-          m = parse_meta(data)
-          print(m.keywords, m.label, m.starred, m.bookmarked, m.edited)
-          assert m.keywords == ["josh", "new york", "café"]
-          assert m.label == "Green" and m.starred and m.bookmarked and m.edited
+              found = et.read(["android/core/build/interop.jpg", "android/core/build/interop.png"], READ_TAGS)
+          for data in found:
+              m = parse_meta(data)
+              print(m.keywords, m.label, m.starred, m.bookmarked, m.edited)
+              assert m.keywords == ["josh", "new york", "café"]
+              assert m.label == "Green" and m.starred and m.bookmarked and m.edited
           PY
 
       - name: Signing key (the same every time, from the repository's secrets)

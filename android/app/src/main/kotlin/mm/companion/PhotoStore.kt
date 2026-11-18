@@ -11,6 +11,7 @@ import android.util.Size
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.suspendCancellableCoroutine
 import mm.core.Jpeg
+import mm.core.Png
 import mm.core.XmpFields
 import mm.core.readFields
 import java.io.File
@@ -30,6 +31,9 @@ data class Photo(
 ) {
     val uri: Uri get() = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
     val isJpeg get() = mime == "image/jpeg" || name.lowercase().let { it.endsWith(".jpg") || it.endsWith(".jpeg") }
+    val isPng get() = mime == "image/png" || name.lowercase().endsWith(".png")
+    /** Tags, dates and edits work on JPGs and PNGs (screenshots). */
+    val canChange get() = isJpeg || isPng
 }
 
 data class Folder(val id: String, val name: String, val count: Int)
@@ -82,8 +86,10 @@ class PhotoStore(private val context: Context) {
 
     /** The tags (read from the start of the file: that's where they are). */
     fun fields(photo: Photo): XmpFields {
-        if (!photo.isJpeg) return XmpFields()
+        if (!photo.canChange) return XmpFields()
         return try {
+            // A PNG's tags can be after the picture (ExifTool can put them there): read all of it.
+            if (photo.isPng) return readFields(File(photo.path).readBytes())
             val head = RandomAccessFile(photo.path, "r").use { f ->
                 val n = minOf(f.length(), 512 * 1024L).toInt()
                 ByteArray(n).also { f.readFully(it) }
@@ -161,7 +167,7 @@ class PhotoStore(private val context: Context) {
 }
 
 /**
- * Set the EXIF dates in a JPEG file. Android's ExifInterface rewrites the file; the XMP and IPTC blocks
+ * Set the EXIF dates in a JPEG or PNG file. Android's ExifInterface rewrites the file; the XMP and IPTC blocks
  * (keywords, labels…) are put back if it dropped them.
  */
 fun setDateInFile(file: File, exifDate: String) {
@@ -171,6 +177,12 @@ fun setDateInFile(file: File, exifDate: String) {
     exif.setAttribute(ExifInterface.TAG_DATETIME_DIGITIZED, exifDate)
     exif.setAttribute(ExifInterface.TAG_DATETIME, exifDate)
     exif.saveAttributes()
+    if (Png.isPng(before)) {
+        val now = Png.parse(file.readBytes())
+        val xmp = Png.parse(before).xmp
+        if (now.xmp == null && xmp != null) { now.xmp = xmp; file.writeBytes(now.toBytes()) }
+        return
+    }
     if (!Jpeg.isJpeg(before)) return
     val old = Jpeg.parse(before)
     val now = Jpeg.parse(file.readBytes())

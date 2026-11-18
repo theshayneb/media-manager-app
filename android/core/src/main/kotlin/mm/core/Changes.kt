@@ -19,8 +19,12 @@ sealed class Change {
     val isTag get() = this is Keywords || this is Label || this is Flag || this is ClearLabels
 }
 
-/** The tags of a JPEG, as the Windows app reads them (XMP keywords and IPTC keywords together). */
+/** Photos whose tags can be changed here: JPEG (XMP + IPTC) and PNG, e.g. screenshots (XMP). */
+fun canTag(bytes: ByteArray) = Jpeg.isJpeg(bytes) || Png.isPng(bytes)
+
+/** The tags of a JPEG or PNG, as the Windows app reads them (XMP keywords and IPTC keywords together). */
 fun readFields(bytes: ByteArray): XmpFields {
+    if (Png.isPng(bytes)) return runCatching { Xmp.parse(Png.parse(bytes).xmp).fields() }.getOrDefault(XmpFields())
     if (!Jpeg.isJpeg(bytes)) return XmpFields()
     val jpeg = Jpeg.parse(bytes)
     val fields = Xmp.parse(jpeg.xmp).fields()
@@ -29,18 +33,32 @@ fun readFields(bytes: ByteArray): XmpFields {
     return fields.copy(keywords = keywords.values.toList())
 }
 
-/** Apply a keyword / label / flag change to a JPEG's bytes (what ExifTool does on the PC). */
+/** Apply a keyword / label / flag change to a JPEG's or PNG's bytes (what ExifTool does on the PC). */
 fun applyTags(bytes: ByteArray, change: Change): ByteArray {
+    if (Png.isPng(bytes)) {
+        val png = Png.parse(bytes)
+        val xmp = Xmp.parse(png.xmp)
+        changeTags(xmp, emptyList(), change)
+        png.xmp = xmp.serialize()
+        return png.toBytes()
+    }
     val jpeg = Jpeg.parse(bytes)
     val xmp = Xmp.parse(jpeg.xmp)
+    changeTags(xmp, jpeg.iptcKeywords, change)?.let { jpeg.setIptcKeywords(it) }
+    jpeg.xmp = xmp.serialize()
+    return jpeg.toBytes()
+}
+
+/** Changes xmp; returns the new keyword list when keywords changed (for IPTC too). */
+private fun changeTags(xmp: Xmp, iptcKeywords: List<String>, change: Change): List<String>? {
     when (change) {
         is Change.Keywords -> {
             val current = linkedMapOf<String, String>()
-            (xmp.keywords + jpeg.iptcKeywords).forEach { current.putIfAbsent(it.lowercase(), it) }
+            (xmp.keywords + iptcKeywords).forEach { current.putIfAbsent(it.lowercase(), it) }
             change.remove.forEach { current.remove(it.lowercase()) }
             change.add.map { it.trim() }.filter { it.isNotEmpty() }.forEach { current.putIfAbsent(it.lowercase(), it) }
             xmp.setKeywords(current.values.toList())
-            jpeg.setIptcKeywords(current.values.toList())
+            return current.values.toList()
         }
         is Change.Label -> xmp.label = change.label
         is Change.Flag -> if (change.flag == "Star") xmp.rating = if (change.on) 5 else 0
@@ -48,12 +66,16 @@ fun applyTags(bytes: ByteArray, change: Change): ByteArray {
         Change.ClearLabels -> { xmp.label = ""; xmp.rating = 0; xmp.bookmarked = false }
         else -> throw IllegalArgumentException("Not a tag change: $change")
     }
-    jpeg.xmp = xmp.serialize()
-    return jpeg.toBytes()
+    return null
 }
 
 /** After an edit: the ✨ mark (the Windows app shows it on photos saved from an Edit view). */
 fun markEdited(bytes: ByteArray): ByteArray {
+    if (Png.isPng(bytes)) {
+        val png = Png.parse(bytes)
+        png.xmp = Xmp.parse(png.xmp).apply { history = EDITED_MARK }.serialize()
+        return png.toBytes()
+    }
     val jpeg = Jpeg.parse(bytes)
     val xmp = Xmp.parse(jpeg.xmp)
     xmp.history = EDITED_MARK

@@ -78,6 +78,34 @@ class CoreTest {
         assertTrue("keep me" in Jpeg.parse(bytes).xmp!!)
     }
 
+    @Test fun pngTagsRoundTripWithExifTool() {
+        // Tagged on the PC (ExifTool, as Photo Manager does): the phone reads it and changes it, keeping the rest.
+        var bytes = javaClass.getResourceAsStream("/pc-tagged.png")!!.readBytes()
+        assertTrue(canTag(bytes))
+        assertEquals(XmpFields(listOf("me", "Paris trip"), "Red", 5, false, ""), readFields(bytes))
+        bytes = applyTags(bytes, Change.Keywords(add = listOf("café"), remove = listOf("me")))
+        bytes = applyTags(bytes, Change.Flag("Bookmark", true))
+        bytes = markEdited(bytes)
+        val f = readFields(bytes)
+        assertEquals(listOf("Paris trip", "café"), f.keywords)
+        assertEquals("Red", f.label); assertTrue(f.bookmarked); assertTrue(f.edited)
+        val png = Png.parse(bytes)
+        assertEquals(1, png.chunks.count { it.type == "iTXt" })
+        assertTrue(png.chunks.any { it.type == "eXIf" })  // the dates are untouched
+        assertTrue(png.chunks.indexOfFirst { it.type == "iTXt" } < png.chunks.indexOfFirst { it.type == "IDAT" })
+        assertEquals(png.chunks.size, Png.parse(png.toBytes()).chunks.size)  // CRCs and lengths right
+
+        // An untagged screenshot.
+        val img = BufferedImage(20, 10, BufferedImage.TYPE_INT_RGB)
+        val plain = ByteArrayOutputStream().also { ImageIO.write(img, "png", it) }.toByteArray()
+        assertEquals(XmpFields(), readFields(plain))
+        assertEquals(listOf("me"), readFields(applyTags(plain, Change.Keywords(add = listOf("me")))).keywords)
+        // Re-encoded after an edit: the information comes along.
+        val again = Png.parse(bytes).transplantInto(plain)
+        assertEquals(f, readFields(again))
+        assertTrue(Png.parse(again).chunks.any { it.type == "eXIf" })
+    }
+
     @Test fun editedCopyKeepsTheInformation() {
         var original = applyTags(jpeg(), Change.Keywords(add = listOf("museum")))
         original = applyTags(original, Change.Label("Purple"))
@@ -118,7 +146,7 @@ class CoreTest {
 }
 
 class InteropFile {
-    /** Writes build/interop.jpg for the Windows app's reader to check (tests/shell/test_android_interop.py). */
+    /** Writes build/interop.jpg and .png for the Windows app's reader to check (tests/shell/test_android_interop.py). */
     @Test fun writeForTheWindowsApp() {
         val img = BufferedImage(40, 30, BufferedImage.TYPE_INT_RGB)
         var bytes = ByteArrayOutputStream().also { ImageIO.write(img, "jpg", it) }.toByteArray()
@@ -128,5 +156,13 @@ class InteropFile {
         bytes = applyTags(bytes, Change.Flag("Bookmark", true))
         bytes = markEdited(bytes)
         java.io.File("build/interop.jpg").writeBytes(bytes)
+
+        var png = ByteArrayOutputStream().also { ImageIO.write(img, "png", it) }.toByteArray()
+        png = applyTags(png, Change.Keywords(add = listOf("josh", "new york", "café")))
+        png = applyTags(png, Change.Label("Green"))
+        png = applyTags(png, Change.Flag("Star", true))
+        png = applyTags(png, Change.Flag("Bookmark", true))
+        png = markEdited(png)
+        java.io.File("build/interop.png").writeBytes(png)
     }
 }

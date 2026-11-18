@@ -7,6 +7,7 @@ import androidx.exifinterface.media.ExifInterface
 import mm.core.Adjustments
 import mm.core.Jpeg
 import mm.core.Pixels
+import mm.core.Png
 import mm.core.applyEdit
 import mm.core.markEdited
 import java.io.ByteArrayInputStream
@@ -67,11 +68,11 @@ fun cropToRaw(box: List<Double>, orientation: Int): List<Double> {
 }
 
 /**
- * The edit, done to a whole JPEG: the same maths as the preview, then the crop (fractions of the file's own
+ * The edit, done to a whole JPEG or PNG (kept as what it is): the same maths as the preview, then the crop (fractions of the file's own
  * pixels), re-encoded, with all the photo's information (EXIF, XMP, IPTC, colour profile) carried over and
  * the ✨ mark added. The picture keeps its orientation tag, so it shows the right way up everywhere.
  */
-fun editJpeg(src: ByteArray, adjustments: Adjustments, rawCrop: List<Double>?): ByteArray {
+fun editImage(src: ByteArray, adjustments: Adjustments, rawCrop: List<Double>?): ByteArray {
     val bitmap = BitmapFactory.decodeByteArray(src, 0, src.size, BitmapFactory.Options().apply {
         inPreferredConfig = Bitmap.Config.ARGB_8888
     }) ?: throw IllegalStateException("Couldn't read the photo")
@@ -83,8 +84,13 @@ fun editJpeg(src: ByteArray, adjustments: Adjustments, rawCrop: List<Double>?): 
             (r * pixels.width).roundToInt(), (b * pixels.height).roundToInt())
     }
     val out = ByteArrayOutputStream()
-    pixels.toBitmap().compress(Bitmap.CompressFormat.JPEG, 95, out)
+    val png = Png.isPng(src)
+    pixels.toBitmap().compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, if (png) 100 else 95, out)
     val encoded = out.toByteArray()
-    val withInfo = if (Jpeg.isJpeg(src)) Jpeg.parse(src).transplantInto(encoded) else encoded
+    val withInfo = when {
+        png -> Png.parse(src).transplantInto(encoded)
+        Jpeg.isJpeg(src) -> Jpeg.parse(src).transplantInto(encoded)
+        else -> encoded
+    }
     return markEdited(withInfo)
 }

@@ -37,7 +37,9 @@ def test_photo_tagged_by_the_android_app_reads_on_the_pc():
     if not find_exiftool():
         pytest.skip("needs ExifTool")
     with ExifTool(find_exiftool()) as et:
-        [data] = et.read([str(INTEROP)], READ_TAGS)
-    meta = parse_meta(data)
-    assert meta.keywords == ["josh", "new york", "café"]
-    assert meta.label == "Green" and meta.starred and meta.bookmarked and meta.edited
+        found = et.read([str(INTEROP), str(INTEROP.with_suffix(".png"))], READ_TAGS)  # a JPG and a screenshot
+    assert len(found) == 2
+    for data in found:
+        meta = parse_meta(data)
+        assert meta.keywords == ["josh", "new york", "café"]
+        assert meta.label == "Green" and meta.starred and meta.bookmarked and meta.edited
