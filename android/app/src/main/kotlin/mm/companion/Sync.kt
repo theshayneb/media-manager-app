@@ -85,6 +85,11 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     val patternName = taken?.let { formatPattern(shared.renamePattern, it) + "." + first.name.substringAfterLast('.', "jpg") }
                     item = drive.find(listOf(first.name, first.originalName), taken, listOfNotNull(patternName))
                 }
+                if (item == null && entries.any { it.change == Change.Delete }) {
+                    // Deleted on the phone and not in OneDrive (never uploaded, or deleted there already): done.
+                    queue.remove(entries.map { it.id }.toSet())
+                    continue
+                }
                 if (item == null) {
                     queue.setError(entries.map { it.id }.toSet(), "Not in OneDrive yet (waiting for camera upload)")
                     waiting = true

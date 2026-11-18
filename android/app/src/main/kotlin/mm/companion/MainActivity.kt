@@ -7,6 +7,9 @@ import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
@@ -23,6 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -86,6 +90,13 @@ fun App(model: AppModel) {
             model.screen != Screen.Grid -> model.screen = Screen.Grid
             else -> model.selected.clear()
         }
+    }
+    // Deleting: Android asks "Move to Trash?" itself.
+    val trash = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+        model.trashed(it.resultCode == android.app.Activity.RESULT_OK)
+    }
+    LaunchedEffect(model.trashRequest) {
+        model.trashRequest?.let { trash.launch(IntentSenderRequest.Builder(it.sender).build()) }
     }
     when (model.screen) {
         Screen.Grid -> GridScreen(model)

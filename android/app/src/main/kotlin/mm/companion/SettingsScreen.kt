@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -82,8 +83,19 @@ fun SettingsScreen(model: AppModel) {
                 Text("• ${e.name}: ${e.change::class.simpleName}" + if (e.error.isNotEmpty()) " — ${e.error}" else "",
                     fontSize = 12.sp, color = Dim)
             }
-            OutlinedButton(onClick = { model.syncNow(); entries = model.queue.all() }, enabled = signedIn,
-                modifier = Modifier.padding(top = 6.dp)) { Text("Sync now") }
+            Row {
+                OutlinedButton(onClick = { model.syncNow(); entries = model.queue.all() }, enabled = signedIn,
+                    modifier = Modifier.padding(top = 6.dp)) { Text("Sync now") }
+                if (entries.isNotEmpty()) {
+                    var sure by remember { mutableStateOf(false) }
+                    Spacer(Modifier.width(10.dp))
+                    OutlinedButton(onClick = {
+                        if (sure) { model.clearQueue(); entries = model.queue.all(); sure = false } else sure = true
+                    }, modifier = Modifier.padding(top = 6.dp)) { Text(if (sure) "Sure? Tap again" else "Clear the list") }
+                }
+            }
+            if (entries.isNotEmpty()) Text("Clear the list: the phone's photos keep their changes; OneDrive's copies " +
+                "won't get them.", color = Dim, fontSize = 12.sp)
 
             Title("From your PC")
             val sets = model.shared.keywordSets

@@ -180,8 +180,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val selection: List<Photo> get() = photos.filter { selected[it.id] == true }
 
     // ---------------------------------------------------------------- changes (phone now, OneDrive queued)
-    private fun record(p: Photo, change: Change, name: String = p.name) {
-        val taken = store.dateTaken(p)?.format(EXIF_DATE) ?: ""
+    private fun record(p: Photo, change: Change, name: String = p.name,
+                       taken: String = store.dateTaken(p)?.format(EXIF_DATE) ?: "") {
         queue.add(p.id, name, originalName(p), taken, change)
     }
 
@@ -264,18 +264,45 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Delete asks Android (its own "Move to Trash?" question), so it works on every phone and the photos can
+     *  be restored from the Trash for 30 days. */
+    class TrashRequest(val sender: android.content.IntentSender, val photos: List<Photo>, val taken: List<String>)
+    var trashRequest by mutableStateOf<TrashRequest?>(null)
+
     fun delete(targets: List<Photo> = selection) {
+        if (targets.isEmpty()) return
+        try {
+            val request = android.provider.MediaStore.createTrashRequest(app().contentResolver, targets.map { it.uri }, true)
+            trashRequest = TrashRequest(request.intentSender, targets,
+                targets.map { store.dateTaken(it)?.format(EXIF_DATE) ?: "" })
+        } catch (e: Exception) {
+            message = "Couldn't delete: ${e.message}"
+        }
+    }
+
+    /** Android's answer to the Trash question. */
+    fun trashed(ok: Boolean) {
+        val r = trashRequest ?: return
+        trashRequest = null
+        if (!ok) { message = "Not deleted"; return }
         viewModelScope.launch {
-            var done = 0
-            withContext(Dispatchers.IO) {
-                for (p in targets) if (store.trash(p)) { record(p, Change.Delete); done++ }
+            val gone = withContext(Dispatchers.IO) {
+                r.photos.indices.filter { !File(r.photos[it].path).exists() }.onEach { i ->
+                    record(r.photos[i], Change.Delete, taken = r.taken[i])  // the OneDrive copy too, if it's there
+                }
             }
-            message = if (done == targets.size) "Sent $done to the Trash" else
-                "Sent $done of ${targets.size} to the Trash (allow \"All files access\" in Settings)"
+            message = if (gone.size == r.photos.size) "Sent ${gone.size} to the Trash"
+                else "Sent ${gone.size} of ${r.photos.size} to the Trash"
             open(folder)
             refreshPending()
             Sync.schedule(app())
         }
+    }
+
+    /** Forget every change still waiting for OneDrive (the phone's photos keep them). */
+    fun clearQueue() {
+        queue.remove(queue.all().map { it.id }.toSet())
+        refreshPending()
     }
 
     /** Save an edit: the phone's photo now (its original to the Trash), the OneDrive copy queued. */

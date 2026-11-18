@@ -142,13 +142,6 @@ class PhotoStore(private val context: Context) {
         return target.path
     }
 
-    /** To Android's Trash (kept 30 days). */
-    fun trash(photo: Photo): Boolean = try {
-        resolver.update(photo.uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, 1) }, null, null) > 0
-    } catch (e: SecurityException) {
-        false
-    }
-
     /** Before an edit replaces a photo: a copy of the original, put straight in the Trash. */
     fun keepOriginalInTrash(photo: Photo, bytes: ByteArray) {
         val values = ContentValues().apply {

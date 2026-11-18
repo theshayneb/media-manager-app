@@ -41,7 +41,7 @@ on the phone straight away, and the same change is queued for the photo in **One
 (found by its name, or by its date taken if it was renamed on the PC). The app downloads that copy, makes the
 same change and uploads it, so your PC gets it through OneDrive, keeping anything you did to it on the PC.
 Changes wait (⚙ shows them) until you're online and the camera upload has put the photo in OneDrive.
-Deletes go to OneDrive's recycle bin, so they can be restored there.
+Deletes go to the phone's Trash (Android asks first) and, if the photo is in OneDrive, to OneDrive's recycle bin; both can be restored. If a photo never reaches OneDrive (or you deleted it there), ⚙ › Clear the list forgets its waiting changes.
 
 Keyword sets and the rename pattern come from the PC: Media Manager on the PC keeps them in
 **OneDrive › Documents › Phone › Media Manager › companion.json**.

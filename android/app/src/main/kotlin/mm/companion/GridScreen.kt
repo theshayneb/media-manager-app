@@ -155,14 +155,11 @@ private fun Tile(model: AppModel, p: Photo) {
 
 @Composable
 private fun BottomBar(model: AppModel) {
-    var confirm by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().background(Panel).padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceAround) {
         for ((icon, label) in listOf("🏷" to "Label", "#" to "Keywords", "📅" to "Date", "✏️" to "Rename")) {
             BarButton(icon, label) { model.screen = Screen.Details }
         }
-        BarButton("🗑", if (confirm) "Sure?" else "Delete") {
-            if (confirm) { confirm = false; model.delete() } else confirm = true
-        }
+        BarButton("🗑", "Delete") { model.delete() }  // Android asks "Move to Trash?" itself
     }
 }
 
