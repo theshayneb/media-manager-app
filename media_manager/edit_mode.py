@@ -26,6 +26,7 @@ class EditMode:
         self.view.finished.connect(self._finished)
         self.view.navigate.connect(self.go)
         self.view.crop_requested.connect(self._crop)
+        self.view.print_requested.connect(self._print)
         self.view.crop_settings = self.photos.settings
         self.photos.edit_mode = self
         self._replace_big_preview()
@@ -162,6 +163,34 @@ class EditMode:
         self.photos.crop_file(path, box, as_copy)
         if not as_copy:
             self.photos.bg.run(lambda: None, lambda _r, _e: self.view.reload_image() if self.active else None)
+
+    def _print(self, path: str, box: tuple, size: str, border: bool) -> None:
+        """Print size: the print copy (sliders and flip/rotate included) into the Project Life folder."""
+        from PySide6.QtWidgets import QFileDialog
+
+        from . import print_size
+
+        media = self.shell.media
+        if not os.path.isdir(media.print_folder):
+            folder = QFileDialog.getExistingDirectory(self.photos, "Where should print copies go?")
+            if not folder:
+                return
+            media.print_folder = folder
+        adjustments, turn, folder, et = self.view.adjustments(), self.view.turn, media.print_folder, self.photos.et
+        self.photos.status.setText("Saving the print copy…")
+
+        def done(dest, error) -> None:  # type: ignore[no-untyped-def]
+            if error:
+                QMessageBox.warning(self.photos, "Print size", f"The print copy wasn't saved:\n{error}")
+                self.photos.status.setText("Print copy not saved.")
+                return
+            self.photos.status.setText(f"Saved {os.path.basename(dest)} in {os.path.basename(folder)}.")
+            layouts = getattr(self.shell, "layouts", None)
+            if layouts is not None:
+                layouts.refresh(force=True)
+
+        self.photos.bg.run(lambda: print_size.save_print(path, adjustments, turn, box, print_size.BY_NAME[size],
+                                                         border, folder, et), done)
 
     # ---------------------------------------------------------------- saving and moving on
     def _save(self) -> None:

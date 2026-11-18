@@ -24,6 +24,11 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   Photo Manager's right-click menu has one hook for it: `extra_menu_items`. Tray: `MediaWindow._build_tray`.
 - Changed inside `photo_manager/` for the ✨ edited mark: `metadata.READ_TAGS`/`Meta.edited`/`EDITED_MARK`
   (EXIF ProcessingSoftware) and `grid.paint_flags` (draws ✨ bottom-right).
+- `print_size.py` (Edit's 🖨 Print size: the user's Affinity crop presets + border macros as one tool; finished
+  sizes at 600 DPI, an even 63 px border taken off the photo part, copies to settings.print_folder) and
+  `layouts.py`/`layouts_panel.py` (the Layouts tab with Details: pockets read from layout pictures in
+  settings.layouts_folder + assets/layouts; fit against the week's print copies). Not built yet, on purpose:
+  dragging photos into pockets, and a pocket starting Print size with its size.
 - `zoom.py`: mouse-wheel zoom/pan, used by the Edit window and patched into Photo Manager's preview CropCanvas.
 - `android/`: the Android companion app (Kotlin; user's choice). `core/` is plain Kotlin and tested here
   (`gradle -p android :core:test`): Photo Manager's tag places (XMP dc:subject + IPTC keywords; PNG: XMP iTXt only, `Png.kt`; xmp:Label,

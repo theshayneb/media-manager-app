@@ -157,6 +157,17 @@ class MediaWindow(QMainWindow):
         sidebar.insertWidget(sidebar.count() - 1, move)
         self.move_btn = move
         self._remember_collapsed()
+        # Layouts (scrapbook pages): a tab with Details, so it slides over it and back.
+        from .layouts_panel import LayoutsPanel
+
+        self.layouts = LayoutsPanel(media, self.photos)
+        self.layouts_dock = self._dock("Layouts", "media-layouts", self.layouts)
+        self.layouts_dock.visibilityChanged.connect(lambda shown: self.layouts.refresh() if shown else None)
+        self._layouts_timer = QTimer(self)  # another photo selected: perhaps another week
+        self._layouts_timer.setSingleShot(True)
+        self._layouts_timer.setInterval(300)
+        self._layouts_timer.timeout.connect(self._refresh_layouts)
+        self.photos.grid.selectionModel().currentChanged.connect(lambda *_a: self._layouts_timer.start())
 
         from .edit_mode import EditMode
 
@@ -168,6 +179,8 @@ class MediaWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.selected_dock)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.tags_dock)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.details_dock)
+        self.tabifyDockWidget(self.details_dock, self.layouts_dock)
+        self.details_dock.raise_()
         self.tags_dock.show()
         self.details_dock.show()
         self.resizeDocks([self.folders_dock, self.tags_dock], [240, 270], Qt.Orientation.Horizontal)
@@ -308,6 +321,7 @@ class MediaWindow(QMainWindow):
         self.selected_dock.setVisible(kind == "music")
         self.tags_dock.setVisible(kind == "music")
         self.details_dock.setVisible(kind == "photos")
+        self.layouts_dock.setVisible(kind == "photos")
         if self.edit.active:  # editing a photo: its sliders show with Photos only, in the Folders panel's place
             self.edit.dock.setVisible(kind == "photos")
         self._photo_page()
@@ -320,9 +334,14 @@ class MediaWindow(QMainWindow):
         elif not self.folders_dock.isVisible():
             self.folders_dock.show()
 
+    def _refresh_layouts(self) -> None:
+        if self.layouts_dock.isVisible() and not self.layouts.visibleRegion().isEmpty():  # its tab is in front
+            self.layouts.refresh()
+
     # ------------------------------------------------------------ panel widths
     def _docks(self) -> list[QDockWidget]:
-        return [self.folders_dock, self.selected_dock, self.tags_dock, self.details_dock, self.edit.dock]
+        return [self.folders_dock, self.selected_dock, self.tags_dock, self.details_dock, self.layouts_dock,
+                self.edit.dock]
 
     def _side(self, dock: QDockWidget) -> bool:
         return self.dockWidgetArea(dock) in (Qt.DockWidgetArea.LeftDockWidgetArea,
@@ -532,6 +551,7 @@ class MediaWindow(QMainWindow):
         self._write_companion()
         self.watch_timer.stop()
         self.watch_bg.shutdown(5000)
+        self.layouts.bg.shutdown(5000)
         for part in (self.movies, self.music, self.photos):
             part.close()  # each saves its own settings and stops its work
         try:

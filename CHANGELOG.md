@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.4
+
+- Edit: 🖨 Print size (P), for the scrapbook. Pick 3x4 (tall), 6x4 (wide), 3x8 or 6x8 and tick White border or
+  not; the crop box takes the right shape. Save print copy makes "IMG_2041 - 3x4 Border.jpg" in the Project Life
+  folder: cropped, resized to your Affinity sizes at 600 DPI (3x4 = 1782 × 2340 px, 6x4 = 3520 × 2340 px…),
+  with an even white border (63 px, 0.105 in) inside that size, JPG at top quality, its date and keywords kept,
+  your sliders and flip/rotate included. The original isn't touched; a name that's taken gets (2), (3)…
+- Layouts: a tab next to Details (Photos). Your page layouts from Digital Templates (any picture of the boxes;
+  the three you sent are built in), each with its tall and wide pockets, and whether the print copies from the
+  selected photo's week fill it.
 ## 0.6.3
 
 - Edit and the big preview keep your zoom when you go to the previous/next photo (←/→); it goes back to

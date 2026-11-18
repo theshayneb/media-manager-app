@@ -31,6 +31,7 @@ from photo_manager.core.crop import ASPECT_RATIOS, can_crop, upright_size
 from photo_manager.core.thumbs import open_image
 from photo_manager.ui.preview import CropCanvas
 
+from . import print_size
 from .photo_edit import SATURATION, SAVED_AS_JPG, Adjustments, Turn, apply, auto, white_balance_at
 from .scrub import make_scrubbable
 from .zoom import Zoom, notches
@@ -200,6 +201,7 @@ class EditView(QWidget):
     finished = Signal(str)   # "save" or "cancel"
     navigate = Signal(int)   # ← / →: the previous / next photo
     crop_requested = Signal(str, tuple, bool)  # path, box (upright pixels of the full photo), as a copy
+    print_requested = Signal(str, tuple, str, bool)  # path, box (on the photo as shown, full size), size, border
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -316,6 +318,12 @@ class EditView(QWidget):
         self.rotate_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.rotate_btn.clicked.connect(self.rotate)
         top.addWidget(self.rotate_btn)
+        # Print size: a scrapbook print copy (the user's Affinity presets + border macros).
+        self.print_btn = QPushButton("🖨 Print size (P)")
+        self.print_btn.setToolTip("Save a print copy at an exact size (600 DPI), with or without a white border")
+        self.print_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.print_btn.clicked.connect(self.start_print)
+        top.addWidget(self.print_btn)
         self.crop_bar = QWidget()
         bar = QHBoxLayout(self.crop_bar)
         bar.setContentsMargins(0, 0, 0, 0)
@@ -340,6 +348,32 @@ class EditView(QWidget):
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             bar.addWidget(b)
         self.crop_bar.setVisible(False)
+        self.print_bar = QWidget()
+        pbar = QHBoxLayout(self.print_bar)
+        pbar.setContentsMargins(0, 0, 0, 0)
+        self.print_size = QComboBox()
+        for size in print_size.SIZES:
+            self.print_size.addItem(f"{size.name} ({size.shape})", size.name)
+        self.print_size.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.print_border = QCheckBox("White border")
+        self.print_border.setChecked(True)
+        self.print_border.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.print_info = QLabel("")
+        self.print_info.setStyleSheet("color: palette(placeholder-text);")
+        for w in (QLabel("Size:"), self.print_size, self.print_border, self.print_info):
+            pbar.addWidget(w)
+        pbar.addStretch(1)
+        save_print = QPushButton("Save print copy (Enter)")
+        save_print.clicked.connect(self.apply_print)
+        cancel_print = QPushButton("Cancel")
+        cancel_print.clicked.connect(self.cancel_crop)
+        for b in (save_print, cancel_print):
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            pbar.addWidget(b)
+        self.print_bar.setVisible(False)
+        self.print_size.currentIndexChanged.connect(lambda _i: self._print_shape())
+        self.print_border.toggled.connect(lambda _on: self._print_shape())
+        self.printing = False
         self.crop_settings = None  # Photo Manager's settings (remembers "Save as a copy"); set by edit_mode
         self.cropper = CropCanvas()
         self.pages = QStackedWidget()
@@ -350,6 +384,7 @@ class EditView(QWidget):
         layout.setContentsMargins(6, 4, 6, 6)
         layout.addLayout(top)
         layout.addWidget(self.crop_bar)
+        layout.addWidget(self.print_bar)
         layout.addWidget(self.pages, 1)
         layout.addLayout(foot)
 
@@ -573,13 +608,44 @@ class EditView(QWidget):
         self.cropper.start_crop(self._ratio_value())
         self.setFocus()
 
+    # ---------------------------------------------------------------- print size
+    def chosen_print(self) -> print_size.PrintSize:
+        return print_size.BY_NAME[self.print_size.currentData()]
+
+    def _print_shape(self) -> None:
+        size, border = self.chosen_print(), self.print_border.isChecked()
+        w, h = size.photo_part(border)
+        self.print_info.setText(f"→ {size.width} × {size.height} px · {print_size.DPI} DPI · prints {size.inches()}"
+                                + (f" (photo {w} × {h} + border)" if border else ""))
+        if self.printing:
+            self.cropper.set_ratio(size.ratio(border))
+
+    def start_print(self) -> None:
+        if not self.crop_btn.isEnabled() or self.cropping:
+            return
+        self.start_crop()
+        self.crop_bar.setVisible(False)
+        self.print_bar.setVisible(True)
+        self.printing = True
+        self._print_shape()
+
+    def apply_print(self) -> None:
+        if not self.printing:
+            return
+        box = self.cropper.crop_box()  # on the photo as shown (edits, flip/rotate), full-size pixels
+        size, border = self.chosen_print().name, self.print_border.isChecked()
+        self.cancel_crop()
+        self.print_requested.emit(self.path, box, size, border)
+
     def cancel_crop(self) -> None:
+        self.printing = False
+        self.print_bar.setVisible(False)
         self.crop_bar.setVisible(False)
         self.cropper.stop_crop()
         self.pages.setCurrentWidget(self.view)
 
     def apply_crop(self) -> None:
-        if not self.cropping:
+        if not self.cropping or self.printing:
             return
         box = self.turn.box_back(self.cropper.crop_box(), *self._full)  # the file isn't turned until Save
         self.cancel_crop()
@@ -640,7 +706,10 @@ class EditView(QWidget):
             if key == Qt.Key.Key_Escape:
                 self.cancel_crop()
             elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                self.apply_crop()
+                self.apply_print() if self.printing else self.apply_crop()
+            return
+        if key == Qt.Key.Key_P and not event.modifiers():
+            self.start_print()
             return
         if key == Qt.Key.Key_C and not event.modifiers():
             self.start_crop()
