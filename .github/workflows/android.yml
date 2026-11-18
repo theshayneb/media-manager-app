@@ -54,6 +54,9 @@ jobs:
             echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/companion.jks" >> "$GITHUB_ENV"
           else
             echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: signed with a temporary key (a new version won't install over this one)"
+            keytool -genkeypair -keystore "$RUNNER_TEMP/temporary.jks" -alias companion -keyalg RSA -keysize 2048 \
+              -validity 10000 -storepass temporary -keypass temporary -dname "CN=Media Manager companion (temporary)"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/temporary.jks" >> "$GITHUB_ENV"
           fi
 
       - name: Build the app
@@ -61,6 +64,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ONEDRIVE_CLIENT_ID: ${{ vars.ONEDRIVE_CLIENT_ID }}
         run: |
+          export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:-temporary}"
           gradle -p android :app:assembleRelease --console=plain
           cp android/app/build/outputs/apk/release/app-release.apk MediaManager-companion.apk
 
