@@ -40,7 +40,37 @@ GROUPS = {
     "month": "Month taken",
     "label": "Label",
     "type": "File type",
+    "folder": "Subfolder",  # Media Manager: the open folder's subfolders too, a group each
 }
+
+TOP_FOLDER = "In this folder"  # the "Subfolder" group of the files not in a subfolder
+
+
+def scan_media(folder: str, subfolders: bool = False) -> list[tuple[str, str, os.stat_result]]:
+    """(path, kind, stat) of the photos and videos in folder (and, Media Manager's "Subfolder" grouping,
+    in its subfolders: not hidden ones like .thumbnails or $RECYCLE.BIN)."""
+    found: list[tuple[str, str, os.stat_result]] = []
+    dirs: list[str] = []
+    try:
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        if subfolders and not entry.name.startswith((".", "$", "@", "#")):
+                            dirs.append(entry.path)
+                        continue
+                    if not entry.is_file():
+                        continue
+                    k = kind(entry.name)
+                    if k:
+                        found.append((entry.path, k, entry.stat()))
+                except OSError:
+                    continue
+    except OSError:
+        return found
+    for sub in sorted(dirs):
+        found.extend(scan_media(sub, True))
+    return found
 
 # Extra lines that can be shown under each filename.
 INFO_FIELDS = {
@@ -115,6 +145,9 @@ def group_key(item: Item, group_by: str, week_start: str) -> tuple[tuple, str]:
     if group_by == "type":
         label = type_label(item.path)
         return (item.kind == "video", label), label or "Other"
+    if group_by == "folder":  # its subfolder of the open folder (Week 1, Week 2… in number order)
+        sub = item.extra.get("subfolder", "")
+        return ((1, *_natural_key(sub)) if sub else (0,)), (sub or TOP_FOLDER)
     dt = meta.date_taken if meta else None
     if dt is None:
         return ((1,), "No date taken")
@@ -174,22 +207,8 @@ class PhotoModel(QAbstractListModel):
     def load_folder(self, folder: str) -> None:
         self._pool.clear()
         self.generation += 1
-        items: list[Item] = []
-        try:
-            with os.scandir(folder) as entries:
-                for entry in entries:
-                    try:
-                        if not entry.is_file():
-                            continue
-                        k = kind(entry.name)
-                        if not k:
-                            continue
-                        st = entry.stat()
-                    except OSError:
-                        continue
-                    items.append(Item(entry.path, k, st.st_size, st.st_mtime))
-        except OSError:
-            items = []
+        items = [Item(path, k, st.st_size, st.st_mtime)
+                 for path, k, st in scan_media(folder, subfolders=self.group_by == "folder")]
         self.folder = folder
         self.all_items = items
         self.regroup()
@@ -204,6 +223,9 @@ class PhotoModel(QAbstractListModel):
         if self.group_by in GROUPS and self.group_by != "none":
             groups: dict[tuple, tuple[str, list[Item]]] = {}
             for item in self.items:
+                if self.group_by == "folder":
+                    sub = os.path.relpath(os.path.dirname(item.path), self.folder) if self.folder else "."
+                    item.extra["subfolder"] = "" if sub == "." else sub
                 key, title = group_key(item, self.group_by, self.week_start)
                 groups.setdefault(key, (title, []))[1].append(item)
             ordered: list[Item] = []

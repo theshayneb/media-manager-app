@@ -1,6 +1,8 @@
 """The Layouts panel: a tab with Photos' Details (click Layouts, it covers Details; click Details, it's back).
-Each layout's picture, its pockets, and whether the week's print copies fill it. The week is the week of the
-photo selected in Photos (as its week groups, with its week-start setting), else this week."""
+Each layout's picture, its pockets, and whether they're filled by:
+- in the Project Life folder (or a folder in it): the group of the Photos grid that the selected picture is in
+  (a subfolder like Week 1, a week, "No date taken"…), dated or not;
+- anywhere else: the print copies in the Project Life folder from the selected photo's week (else this week)."""
 
 from __future__ import annotations
 
@@ -36,7 +38,7 @@ class LayoutsPanel(QWidget):
         self.layouts: list[layouts.Layout] = []
         self.week: layouts.Week | None = None
         self._loaded_from: str | None = None
-        self._scanned: tuple[date, float] | None = None
+        self._scanned: tuple[object, float] | None = None
         self._busy = False
 
         self.heading = QLabel("")
@@ -83,12 +85,29 @@ class LayoutsPanel(QWidget):
             day = meta.date_taken.date()
         return layouts.week_of(day, getattr(self.photos.settings, "week_start", "sunday"))
 
+    def selected_group(self) -> tuple[str, list[str]] | None:
+        """In the Project Life folder: (title, pictures) of the grid group the selected picture is in (the whole
+        folder when it isn't grouped). Elsewhere None (the week's print copies count instead)."""
+        model = self.photos.model
+        folder = getattr(model, "folder", "")
+        if not layouts.is_inside(folder, self.media.print_folder):
+            return None
+        pictures = [i for i in model.items if i.kind == "image"]
+        path = self.photos.grid.current_path()
+        item = model.item(path) if path else None
+        title = item.extra.get("group") if item is not None and model.grouped else None
+        if title is None:
+            return os.path.basename(folder), [i.path for i in pictures]
+        return title, [i.path for i in pictures if i.extra.get("group") == title]
+
     def refresh(self, force: bool = False, layouts_too: bool = False) -> None:
         """Look at the week's print copies (and read the layouts the first time, or when asked)."""
         if self._busy:
             return
-        start = self.week_start_day()
-        recent = self._scanned and self._scanned[0] == start and time.time() - self._scanned[1] < 15
+        group = self.selected_group()
+        start = self.week_start_day() if group is None else None
+        what: object = start if group is None else (group[0], tuple(group[1]))
+        recent = self._scanned and self._scanned[0] == what and time.time() - self._scanned[1] < 15
         reload_layouts = layouts_too or self._loaded_from != self.media.layouts_folder
         if recent and not force and not reload_layouts:
             return
@@ -97,6 +116,8 @@ class LayoutsPanel(QWidget):
 
         def work():  # type: ignore[no-untyped-def]
             found = layouts.load_layouts(templates) if reload_layouts else None
+            if group is not None:
+                return found, layouts.group_prints(group[1], group[0])
             return found, layouts.week_prints(prints, start)
 
         def done(result, error) -> None:  # type: ignore[no-untyped-def]
@@ -107,7 +128,7 @@ class LayoutsPanel(QWidget):
             found, week = result
             if found is not None:
                 self.layouts, self._loaded_from = found, templates
-            self.week, self._scanned = week, (start, time.time())
+            self.week, self._scanned = week, (what, time.time())
             self._fill()
 
         self.bg.run(work, done)
@@ -117,12 +138,14 @@ class LayoutsPanel(QWidget):
         week = self.week
         if week is None:
             return
-        end = week.start.toordinal() + 6
-        last = date.fromordinal(end)
         total = week.tall + week.wide + week.square
-        self.heading.setText(f"<b>Week of {week.start:%a, %b} {week.start.day}</b> – {last:%b} {last.day}<br>"
-                             f"{total} print cop{'y' if total == 1 else 'ies'}: {week.tall} tall, {week.wide} wide"
-                             + (f", {week.square} square" if week.square else ""))
+        counts = f"{week.tall} tall, {week.wide} wide" + (f", {week.square} square" if week.square else "")
+        if week.start is None:  # a group of the grid, in the Project Life folder
+            self.heading.setText(f"<b>{week.title}</b><br>{total} picture{'' if total == 1 else 's'}: {counts}")
+        else:
+            last = date.fromordinal(week.start.toordinal() + 6)
+            self.heading.setText(f"<b>Week of {week.start:%a, %b} {week.start.day}</b> – {last:%b} {last.day}<br>"
+                                 f"{total} print cop{'y' if total == 1 else 'ies'}: {counts}")
         self.heading.setToolTip("\n".join(week.names) or "No print copies from this week yet")
         self.list.clear()
         for layout in self.layouts:
@@ -142,7 +165,7 @@ class LayoutsPanel(QWidget):
             notes.append(f"Layouts folder not found: {self.media.layouts_folder}")
         if not os.path.isdir(self.media.print_folder):
             notes.append(f"Print copies folder not found: {self.media.print_folder}")
-        elif week.undated:
+        elif week.undated and week.start is not None:
             notes.append(f"{week.undated} print cop{'y has' if week.undated == 1 else 'ies have'} no date taken "
                          "(not counted)")
         self.note.setText("\n".join(notes))

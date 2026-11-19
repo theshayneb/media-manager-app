@@ -318,8 +318,10 @@ def test_collapsed_photo_groups_are_remembered(tmp_path):
     win.show()
     _wait(lambda: False, 0.5)
     photos = win.photos
-    photos.set_group("type")
+    photos.open_folder(str(b))
+    photos.set_group("type")  # each folder has its own grouping (0.6.7)
     photos.open_folder(str(a))
+    photos.set_group("type")
     titles = photos.model.group_titles()
     assert len(titles) == 2
     photos.grid.toggle_group(titles[0])

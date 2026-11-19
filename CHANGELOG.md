@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.7
+
+- Photos: Group by → Subfolder. The open folder's subfolders (Week 1, Week 2… in number order) each become a
+  group, with the files that aren't in a subfolder under "In this folder".
+- Each folder keeps its own grouping: change it in one folder and the others stay as they were. Folders you
+  haven't set use the grouping you had before.
+- Layouts: in the Project Life folder (or a folder in it), the panel counts the group you've selected in the grid
+  (a subfolder, a week, "No date taken"…), whether the pictures have a date or not. Elsewhere it counts the
+  print copies from the selected photo's week, as before.
+
 ## 0.6.6
 
 - Photos shows Affinity documents (.af) with a thumbnail (the preview Affinity keeps inside the file); double-click

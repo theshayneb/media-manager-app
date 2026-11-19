@@ -58,7 +58,7 @@ from .dialogs import (
     TemplateDialog,
 )
 from .folders import FavoritesList, FolderTree
-from .grid import GROUPS, INFO_FIELDS, Item, PhotoModel, ThumbGrid, type_label
+from .grid import GROUPS, INFO_FIELDS, Item, PhotoModel, ThumbGrid, scan_media, type_label
 from .panels import PANELS, Sidebar
 from .preview import PreviewPane
 from .theme import THEMES, apply_theme
@@ -450,16 +450,28 @@ class MainWindow(QMainWindow):
     # -------------------------------------------------------------- options
 
     def set_group(self, key: str) -> None:
+        """Media Manager: each folder keeps its own grouping (settings.folder_groups); settings.group_by stays
+        the one for folders that have none of their own."""
         if key not in GROUPS:
             return
-        self.settings.group_by = key
+        listing_changes = (key == "folder") != (self.model.group_by == "folder")  # subfolders' files in or out
+        if self.model.folder:
+            self.settings.folder_groups[os.path.normcase(self.model.folder)] = key
+        else:
+            self.settings.group_by = key
+        self._show_group(key)
+        if listing_changes and self.model.folder:
+            self.open_folder(self.model.folder)
+        else:
+            self.regroup()
+
+    def _show_group(self, key: str) -> None:
         self.model.group_by = key
         for widget_key, action in self.group_menu_actions.items():
             action.setChecked(widget_key == key)
         self.group_combo.blockSignals(True)
         self.group_combo.setCurrentIndex(max(0, self.group_combo.findData(key)))
         self.group_combo.blockSignals(False)
-        self.regroup()
 
     def set_week_start(self, key: str) -> None:
         self.settings.week_start = key
@@ -555,10 +567,16 @@ class MainWindow(QMainWindow):
             self.status.setText(f"Folder not found: {folder}")
             return
         folder = os.path.normpath(folder)
+        key = self.settings.folder_groups.get(os.path.normcase(folder), self.settings.group_by)
+        self._show_group(key if key in GROUPS else "none")  # this folder's own grouping
         self.model.load_folder(folder)
         if self.watcher.directories():
             self.watcher.removePaths(self.watcher.directories())
         self.watcher.addPath(folder)
+        if self.model.group_by == "folder":  # Media Manager: its subfolders' files are shown too
+            subs = sorted({os.path.dirname(i.path) for i in self.model.all_items} - {folder})
+            if subs:
+                self.watcher.addPaths(subs)
         self._fresh.clear()
         self.settings.last_folder = folder
         self.address.setText(folder)
@@ -583,17 +601,8 @@ class MainWindow(QMainWindow):
             return
         if not os.path.isdir(folder):
             return
-        on_disk: dict[str, tuple[str, os.stat_result]] = {}
-        try:
-            with os.scandir(folder) as entries:
-                for entry in entries:
-                    try:
-                        if entry.is_file() and media_kind(entry.name):
-                            on_disk[_key(entry.path)] = (entry.path, entry.stat())
-                    except OSError:
-                        continue
-        except OSError:
-            return
+        on_disk = {_key(path): (path, st)
+                   for path, _k, st in scan_media(folder, subfolders=self.model.group_by == "folder")}
         known = {_key(i.path): i for i in self.model.all_items}
         gone = [i.path for k, i in known.items() if k not in on_disk]
         added = []

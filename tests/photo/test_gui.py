@@ -193,7 +193,37 @@ def test_group_by_week_respects_week_start(window):
     win.set_week_start("monday")
     assert headers(win) == ["Week 43  ·  Mon, Oct 19  –  Sun, Oct 25, 2026",
                             "Week 44  ·  Mon, Oct 26  –  Sun, Nov 1, 2026"]
-    assert win.settings.group_by == "week" and win.settings.week_start == "monday"
+    # Media Manager: the grouping is this folder's own.
+    assert win.settings.folder_groups[os.path.normcase(win.model.folder)] == "week"
+    assert win.settings.week_start == "monday"
+
+
+def test_group_by_subfolder_and_each_folder_keeps_its_grouping(window, tmp_path):
+    from PIL import Image
+
+    win, folder, _ = window
+    pl = tmp_path / "Project Life"
+    for sub in ("Week 2", "Week 10", ".thumbnails"):
+        (pl / sub).mkdir(parents=True)
+    Image.new("RGB", (30, 40)).save(pl / "Week 2" / "card.png")
+    Image.new("RGB", (30, 40)).save(pl / "Week 10" / "a.jpg")
+    Image.new("RGB", (30, 40)).save(pl / ".thumbnails" / "x.jpg")
+    Image.new("RGB", (30, 40)).save(pl / "loose.jpg")
+    win.open_folder(str(pl))
+    assert len(win.model.items) == 1  # only the folder itself, until grouped by subfolder
+    win.set_group("folder")
+    assert headers(win) == ["In this folder", "Week 2", "Week 10"]  # number order; hidden folders skipped
+    assert len(win.model.items) == 3
+    win.sync_folder()  # looking again keeps the subfolders' files
+    assert len(win.model.items) == 3
+    # Another folder keeps its own grouping; coming back, this one is by subfolder again.
+    win.open_folder(str(folder))
+    assert win.model.group_by == "none" and win.group_combo.currentData() == "none"
+    win.set_group("week")
+    win.open_folder(str(pl))
+    assert win.model.group_by == "folder" and headers(win)[1:] == ["Week 2", "Week 10"]
+    win.open_folder(str(folder))
+    assert win.model.group_by == "week"
 
 
 def test_group_by_label_and_header_click_selects_group(window):

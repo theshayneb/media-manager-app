@@ -26,10 +26,13 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   (EXIF ProcessingSoftware) and `grid.paint_flags` (draws ✨ bottom-right).
   And for .af (Affinity) files: `media.AFFINITY_EXTS`/kind "affinity", `thumbs.affinity_preview` (its "Thmb" PNG);
   double-click opens it in Windows' app for .af (edit_mode `open_it`).
+  And Group by "Subfolder" (`grid.scan_media`, GROUPS["folder"]) and each folder's own grouping
+  (`settings.folder_groups`, `MainWindow.set_group`/`_show_group`/`open_folder`).
 - `print_size.py` (Edit's 🖨 Print size: the user's Affinity crop presets + border macros as one tool; finished
   sizes at 600 DPI, an even 63 px border taken off the photo part, copies to settings.print_folder) and
   `layouts.py`/`layouts_panel.py` (the Layouts tab with Details: pockets read from layout pictures in
-  settings.layouts_folder + assets/layouts; fit against the week's print copies). Not built yet, on purpose:
+  settings.layouts_folder + assets/layouts; fit against the week's print copies, or, inside the print
+  folder, the grid group of the selected picture). Not built yet, on purpose:
   dragging photos into pockets, and a pocket starting Print size with its size.
 - `zoom.py`: mouse-wheel zoom/pan, used by the Edit window and patched into Photo Manager's preview CropCanvas.
 - `android/`: the Android companion app (Kotlin; user's choice). `core/` is plain Kotlin and tested here

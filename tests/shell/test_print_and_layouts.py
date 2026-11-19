@@ -152,3 +152,41 @@ def test_layouts_stays_behind_details_wherever_it_is(tmp_path):
     _wait(lambda: win.layouts_dock in win.tabifiedDockWidgets(win.details_dock), 2)
     assert win.dockWidgetArea(win.layouts_dock) == Qt.DockWidgetArea.RightDockWidgetArea
     win.close()
+
+
+def test_in_the_project_life_folder_the_selected_group_counts(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    pl = tmp_path / "Project Life"
+    for sub in ("Week 1", "Week 2"):
+        (pl / sub).mkdir(parents=True)
+    for n in range(4):  # journaling cards and photos without a date
+        Image.new("RGB", (30, 40)).save(pl / "Week 1" / f"card{n}.png")
+    Image.new("RGB", (60, 40)).save(pl / "Week 2" / "wide.jpg")
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.5)
+    win.media.print_folder = str(pl)
+    win.show_kind("photos")
+    photos = win.photos
+    photos.open_folder(str(pl))
+    photos.set_group("folder")
+    card = str(pl / "Week 1" / "card0.png")
+    photos.grid.select_paths([card], current=card)
+    panel = win.layouts
+    panel.refresh(force=True)
+    assert _wait(lambda: panel.week is not None and panel.week.title == "Week 1")
+    assert (panel.week.tall, panel.week.wide) == (4, 0)
+    assert "Week 1" in panel.heading.text() and "4 tall" in panel.heading.text()
+    four = next(lay for lay in panel.layouts if lay.name == "Four 3x4")
+    assert layouts.fit(four, panel.week) == (True, "✓ fits")
+    wide = str(pl / "Week 2" / "wide.jpg")
+    photos.grid.select_paths([wide], current=wide)
+    panel.refresh(force=True)
+    assert _wait(lambda: panel.week.title == "Week 2" and panel.week.wide == 1)
+    win.close()

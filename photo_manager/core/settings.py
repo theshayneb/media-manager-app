@@ -68,7 +68,8 @@ class Settings:
     favorites: list[str] = field(default_factory=list)
     rename_source: str = "taken"  # taken | created | file_created | file_modified
     theme: str = "dark"  # dark | light | system
-    group_by: str = "none"  # none | day | week | month | label
+    group_by: str = "none"  # none | day | week | month | label  (folders without their own, below)
+    folder_groups: dict[str, str] = field(default_factory=dict)  # Media Manager: folder -> its grouping
     week_start: str = "sunday"  # sunday | monday
     thumb_info: list[str] = field(default_factory=lambda: ["date"])
     hidden_panels: list[str] = field(default_factory=list)

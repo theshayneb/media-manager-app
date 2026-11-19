@@ -141,12 +141,42 @@ def date_taken(path: str) -> datetime | None:
 
 @dataclass
 class Week:
-    start: date
+    start: date | None  # None: a group of the Photos grid (title), not a week
     tall: int = 0
     wide: int = 0
     square: int = 0
     undated: int = 0
     names: tuple[str, ...] = ()
+    title: str = ""
+
+
+def is_inside(folder: str, parent: str) -> bool:
+    """folder is parent or one of its subfolders."""
+    if not folder or not parent:
+        return False
+    f, p = (os.path.normcase(os.path.normpath(x)) for x in (folder, parent))
+    return f == p or f.startswith(p.rstrip("\\/") + os.sep)
+
+
+def shape_of(path: str) -> str | None:
+    from photo_manager.core.crop import upright_size
+
+    try:
+        w, h = upright_size(path)
+    except Exception:  # noqa: BLE001
+        return None
+    return "tall" if w < h * 0.92 else "wide" if w > h * 1.08 else "square"
+
+
+def group_prints(paths: list[str], title: str) -> Week:
+    """A group of the Photos grid (a week, a subfolder, "No date taken"…): dated or not, every picture counts."""
+    week = Week(None, title=title)
+    for path in paths:
+        shape = shape_of(path)
+        if shape:
+            setattr(week, shape, getattr(week, shape) + 1)
+    week.names = tuple(sorted(os.path.basename(p) for p in paths))
+    return week
 
 
 def week_prints(folder: str, start: date) -> Week:
@@ -164,17 +194,10 @@ def week_prints(folder: str, start: date) -> Week:
             continue
         if not start <= taken.date() < end:
             continue
-        try:
-            with Image.open(entry) as im:
-                w, h = im.size
-        except Exception:  # noqa: BLE001
+        shape = shape_of(str(entry))
+        if shape is None:
             continue
-        if w < h * 0.92:
-            week.tall += 1
-        elif w > h * 1.08:
-            week.wide += 1
-        else:
-            week.square += 1
+        setattr(week, shape, getattr(week, shape) + 1)
         names.append(entry.name)
     week.names = tuple(sorted(names))
     return week
@@ -190,4 +213,4 @@ def fit(layout: Layout, week: Week) -> tuple[bool, str]:
     if short:
         return False, "✗ needs " + ", ".join(short)
     spare = (week.tall + week.wide + week.square) - len(layout.pockets)
-    return True, "✓ fits this week" + (f" ({spare} left over)" if spare else "")
+    return True, "✓ fits" + (" this week" if week.start else "") + (f" ({spare} left over)" if spare else "")
