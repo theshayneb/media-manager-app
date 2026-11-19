@@ -221,7 +221,7 @@ def fit(layout: Layout | list[Layout], week: Week) -> tuple[bool, str]:
     need = needs(pages)
     short = [f"{need[s] - getattr(week, s)} more {s}" for s in SHAPES if need[s] > getattr(week, s)]
     if short:
-        return False, "✗ needs " + ", ".join(short)
+        return False, "needs " + ", ".join(short)
     spare = (week.tall + week.wide + week.square) - sum(need.values())
     return True, "✓ fits" + (" this week" if week.start else "") + (f" ({spare} left over)" if spare else "")
 

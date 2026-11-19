@@ -315,12 +315,15 @@ class MainWindow(QMainWindow):
              "folder (also on Tools menu)", self.import_videos),
             ("Delete", "", "Send selected files to the Recycle Bin (Delete)", self.delete_selected),
             ("Show in Explorer", "Ctrl+E", "Show in Windows Explorer (Ctrl+E)", self.show_in_explorer),
-            ("Open", "Ctrl+O", "Open in the default Windows app (Ctrl+O)", self.open_external_selected),
+            ("Open", "Ctrl+O", "Open the selected files in their Windows app (Ctrl+O or Shift+X)",
+             self.open_external_selected),
         ):
             action = QAction(text, self)
             action.setToolTip(tip)
             if shortcut:
                 action.setShortcut(QKeySequence(shortcut))
+            if text == "Open":  # Media Manager: Shift+X too (the user's request)
+                action.setShortcuts([QKeySequence("Ctrl+O"), QKeySequence("Shift+X")])
             action.triggered.connect(slot)
             bar.addAction(action)
 
@@ -407,7 +410,8 @@ class MainWindow(QMainWindow):
 
     # Keys the app already uses; label hotkeys can't take these.
     RESERVED_KEYS = {
-        "Ctrl+M": "Move to", "Ctrl+E": "Show in Explorer", "Ctrl+O": "Open", "Ctrl+D": "Favorite folder",
+        "Ctrl+M": "Move to", "Ctrl+E": "Show in Explorer", "Ctrl+O": "Open", "Shift+X": "Open",
+        "Ctrl+D": "Favorite folder",
         "Ctrl+C": "Copy", "Ctrl+A": "Select all", "F2": "Rename", "F5": "Refresh", "F9": "Sidebar",
         "Shift+P": "Preview", "Ctrl+Shift+R": "Select files that need renaming", "Del": "Delete",
         "Alt+Up": "Parent folder",
@@ -1190,8 +1194,12 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def open_external_selected(self) -> None:
-        path = self.grid.current_path()
-        if path:
+        """Media Manager: every selected file (an open Affinity takes each of them), not just one."""
+        paths = self.grid.selected_paths() or [p for p in [self.grid.current_path()] if p]
+        if len(paths) > 20 and QMessageBox.question(
+                self, "Open", f"Open all {len(paths)} files?") != QMessageBox.StandardButton.Yes:
+            return
+        for path in paths:
             self.open_external(path)
 
     # -------------------------------------------------------------- viewer

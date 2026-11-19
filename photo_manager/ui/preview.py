@@ -33,6 +33,7 @@ from .grid import paint_flags, paint_label_frame, paint_type_badge, pil_to_qimag
 from .video import VideoView
 
 HANDLE = 10  # px, grab distance for corners/edges
+SNAP = 8  # px (Media Manager): a dragged crop box this near the middle snaps to it
 
 
 def load_display_pixmap(path: str, kind: str, longest: int) -> QPixmap | None:
@@ -128,6 +129,35 @@ class CropCanvas(QWidget):
         self._drag = None
         self.update()
 
+    def centred(self) -> tuple[bool, bool]:
+        """Media Manager: (left-right, top-bottom): the crop box is in the middle that way."""
+        if self.box.isEmpty():
+            return False, False
+        c, (w, h) = self.box.normalized().center(), self.full_size
+        return abs(c.x() - w / 2) < 0.75, abs(c.y() - h / 2) < 0.75
+
+    def nudge(self, dx: int, dy: int) -> None:
+        """Media Manager: the arrow keys move the crop box (dx, dy screen pixels), kept inside the photo."""
+        if not self.cropping or self.box.isEmpty():
+            return
+        s = self._scale() or 1.0
+        w, h = self.full_size
+        r = self.box.normalized().translated(dx / s, dy / s)
+        r.moveLeft(min(max(r.left(), 0), w - r.width()))
+        r.moveTop(min(max(r.top(), 0), h - r.height()))
+        # Passing over the middle stops there (so it's easy to hit).
+        old = self.box.normalized().center()
+        for axis, size in ((0, w), (1, h)):
+            before, after = (old.x(), r.center().x()) if axis == 0 else (old.y(), r.center().y())
+            if (before - size / 2) * (after - size / 2) < 0:
+                if axis == 0:
+                    r.moveLeft(size / 2 - r.width() / 2)
+                else:
+                    r.moveTop(size / 2 - r.height() / 2)
+        self.box = r
+        self.changed.emit()
+        self.update()
+
     def crop_box(self) -> tuple[int, int, int, int]:
         b = self.box.normalized()
         return (round(b.left()), round(b.top()), round(b.right()), round(b.bottom()))
@@ -151,7 +181,16 @@ class CropCanvas(QWidget):
             shade.addRect(target)
             hole = QPainterPath()
             hole.addRect(box)
-            painter.fillPath(shade.subtracted(hole), QColor(0, 0, 0, 150))
+            painter.fillPath(shade.subtracted(hole), QColor(0, 0, 0, 215))  # Media Manager: darker (was 150)
+            # Media Manager: a green line through the middle when the box is centred that way.
+            cx, cy = self.centred()
+            painter.setPen(QPen(QColor("#3ddc84"), 2))
+            if cx:
+                mid = target.left() + target.width() / 2
+                painter.drawLine(QPointF(mid, target.top()), QPointF(mid, target.bottom()))
+            if cy:
+                mid = target.top() + target.height() / 2
+                painter.drawLine(QPointF(target.left(), mid), QPointF(target.right(), mid))
             painter.setPen(QPen(QColor("white"), 1, Qt.PenStyle.SolidLine))
             painter.drawRect(box)
             painter.setPen(QPen(QColor(255, 255, 255, 90), 1))
@@ -240,6 +279,11 @@ class CropCanvas(QWidget):
             r.translate(p - self._drag_origin)
             r.moveLeft(min(max(r.left(), 0), w - r.width()))
             r.moveTop(min(max(r.top(), 0), h - r.height()))
+            snap = SNAP / (self._scale() or 1.0)  # Media Manager: snaps to the middle, near it
+            if abs(r.center().x() - w / 2) < snap:
+                r.moveLeft(w / 2 - r.width() / 2)
+            if abs(r.center().y() - h / 2) < snap:
+                r.moveTop(h / 2 - r.height() / 2)
             self.box = r
         elif self._drag == "new":
             self.box = self._constrain(self._drag_origin, p)

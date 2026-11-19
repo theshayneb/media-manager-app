@@ -732,3 +732,51 @@ def test_new_videos_are_flagged_until_the_folder_is_opened(tmp_path):
     assert _wait(lambda: not win._watching)
     assert not win.new_videos
     win.close()
+
+
+def test_folders_in_your_order_and_the_drop_folder_lights_up(tmp_path):
+    from PySide6.QtCore import QMimeData, QUrl
+    from PySide6.QtGui import QDragMoveEvent
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from media_manager.shell import FolderList
+
+    _music_folders(tmp_path)
+    folders = []
+    for name in ("Alpha", "Beta", "Gamma"):
+        (tmp_path / name).mkdir()
+        folders.append(str(tmp_path / name))
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.5)
+    win.photos.settings.favorites = list(folders)
+    win.photos._fill_favorites()
+    keys = lambda: [k for k, _l, _t in win.entries()["photos"]]  # noqa: E731
+    assert keys() == ["fav:" + f for f in folders]
+    win.move_entry("photos", "fav:" + folders[2], "fav:" + folders[0], before=True)  # Gamma to the top
+    assert keys() == ["fav:" + folders[2], "fav:" + folders[0], "fav:" + folders[1]]
+    win.move_entry("music", "library", "review", before=True)
+    assert [k for k, _l, _t in win.entries()["music"]][:2] == ["library", "review"]
+    win.close()
+    win = build_window()  # remembered
+    assert [k for k, _l, _t in win.entries()["photos"]][0] == "fav:" + folders[2]
+
+    # Photos held over a photo folder: it lights up.
+    pic = tmp_path / "x.jpg"
+    from PIL import Image
+
+    Image.new("RGB", (8, 8)).save(pic)
+    item = win._item("photos", "fav:" + folders[0])
+    lst: FolderList = win.list
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(pic))])
+    pos = lst.visualItemRect(item).center()
+    lst._dragging = None
+    event = QDragMoveEvent(pos, Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton,
+                           Qt.KeyboardModifier.NoModifier)
+    lst.dragMoveEvent(event)
+    assert lst._lit is item and item.background().color().alpha() > 0
+    lst._light(None)
+    assert item.background().style() == Qt.BrushStyle.NoBrush
+    win.close()

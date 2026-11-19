@@ -8,9 +8,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QEvent, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QIcon
+from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, Qt, QTimer
+from PySide6.QtGui import QBrush, QColor, QDrag, QFont, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
+    QApplication,
     QDockWidget,
     QListWidget,
     QListWidgetItem,
@@ -34,20 +35,83 @@ from .settings import MediaSettings
 
 GROUPS = [("photos", "📷  PHOTOS & VIDEOS"), ("music", "🎵  MUSIC"), ("movies", "🎬  MOVIES & TV")]
 KIND_ROLE = Qt.ItemDataRole.UserRole
+FIXED = {"photo-open", "movie-add"}  # the "＋ Add…" entries stay where they are
 NEW_COLOUR = "#f0a830"   # a Movies & TV folder with new videos in it
 WATCH_EVERY_MS = 60_000  # how often the Movies & TV folders are checked for new videos
 KEY_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
+ORDER_MIME = "application/x-media-manager-folder"
+DROP_COLOUR = QColor(59, 111, 196, 150)  # the folder a photo will be dropped in
+
+
 class FolderList(QListWidget):
     """The Folders list. Photos can be dropped on a photo folder to move them there (Ctrl to copy),
-    as on Photo Manager's favorites."""
+    as on Photo Manager's favorites; that folder lights up while you hold them over it. A folder can be
+    dragged up or down within its own section to put the list in your order (settings.folder_order)."""
 
     def __init__(self, shell: "MediaWindow"):
         super().__init__()
         self.shell = shell
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
+        self._press: tuple[QPoint, QListWidgetItem] | None = None
+        self._lit: QListWidgetItem | None = None
+        self._line_y: int | None = None  # where a dragged folder will go
+        self._dragging: tuple[str, str] | None = None  # (kind, key) of a folder being dragged
+
+    # -- dragging a folder to another place in its section
+    def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        item = self.itemAt(event.position().toPoint())
+        movable = item is not None and item.data(KIND_ROLE) and str(item.data(KEY_ROLE)) not in FIXED
+        self._press = (event.position().toPoint(), item) if movable and \
+            event.button() == Qt.MouseButton.LeftButton else None
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        if self._press and event.buttons() & Qt.MouseButton.LeftButton and \
+                (event.position().toPoint() - self._press[0]).manhattanLength() >= QApplication.startDragDistance():
+            item = self._press[1]
+            self._press = None
+            mime = QMimeData()
+            mime.setData(ORDER_MIME, f"{item.data(KIND_ROLE)}\n{item.data(KEY_ROLE)}".encode())
+            drag = QDrag(self)
+            drag.setMimeData(mime)
+            drag.exec(Qt.DropAction.MoveAction)
+            return
+        super().mouseMoveEvent(event)
+
+    def _order_target(self, pos) -> tuple[QListWidgetItem, bool] | None:  # type: ignore[no-untyped-def]
+        """(the entry it goes next to, before it?) for a dragged folder: only within its own section."""
+        item = self.itemAt(pos)
+        source = self._dragging
+        if item is None or source is None or item.data(KIND_ROLE) != source[0] or str(item.data(KEY_ROLE)) in FIXED:
+            return None
+        rect = self.visualItemRect(item)
+        return item, pos.y() < rect.center().y()
+
+    def _light(self, item: QListWidgetItem | None, line_y: int | None = None) -> None:
+        if self._lit is not None and self._lit is not item:
+            self._lit.setBackground(QBrush())
+        self._lit = item
+        if item is not None:
+            item.setBackground(QBrush(DROP_COLOUR))
+        if line_y != self._line_y:
+            self._line_y = line_y
+            self.viewport().update()
+
+    def dragLeaveEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        self._light(None)
+        self._dragging = None
+        super().dragLeaveEvent(event)
+
+    def paintEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        super().paintEvent(event)
+        if self._line_y is not None:
+            p = QPainter(self.viewport())
+            p.setPen(QPen(QColor("#4c8dff"), 3))
+            p.drawLine(4, self._line_y, self.viewport().width() - 4, self._line_y)
+            p.end()
 
     def _photo_folder_at(self, pos) -> str:  # type: ignore[no-untyped-def]
         item = self.itemAt(pos)
@@ -57,20 +121,51 @@ class FolderList(QListWidget):
         return key[4:] if key.startswith("fav:") and os.path.isdir(key[4:]) else ""
 
     def dragEnterEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if dropped_files(event):
+        self._dragging = None
+        if event.mimeData().hasFormat(ORDER_MIME):
+            kind, key = bytes(event.mimeData().data(ORDER_MIME)).decode().split("\n", 1)
+            self._dragging = (kind, key)
+            event.acceptProposedAction()
+        elif dropped_files(event):
             event.acceptProposedAction()
         else:
             event.ignore()
 
     def dragMoveEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        if self._photo_folder_at(event.position().toPoint()):
+        pos = event.position().toPoint()
+        if self._dragging is not None:
+            target = self._order_target(pos)
+            if target:
+                rect = self.visualItemRect(target[0])
+                self._light(None, rect.top() if target[1] else rect.bottom())
+                event.setDropAction(Qt.DropAction.MoveAction)
+                event.accept()
+            else:
+                self._light(None)
+                event.ignore()
+            return
+        if self._photo_folder_at(pos):
+            self._light(self.itemAt(pos))  # this folder lights up: the photos go here
             event.setDropAction(Qt.DropAction.CopyAction if wants_copy(event) else Qt.DropAction.MoveAction)
             event.accept()
         else:
+            self._light(None)
             event.ignore()
 
     def dropEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
-        folder = self._photo_folder_at(event.position().toPoint())
+        pos = event.position().toPoint()
+        self._light(None)
+        if self._dragging is not None:
+            target = self._order_target(pos)
+            kind, key = self._dragging
+            self._dragging = None
+            if target:
+                self.shell.move_entry(kind, key, str(target[0].data(KEY_ROLE)), before=target[1])
+                event.acceptProposedAction()
+            else:
+                event.ignore()
+            return
+        folder = self._photo_folder_at(pos)
         paths = dropped_files(event)
         if folder and paths:
             self.shell.photos.move_paths(paths, folder, copy=wants_copy(event))
@@ -239,7 +334,21 @@ class MediaWindow(QMainWindow):
             movies.append(("movie:" + f["path"], label, tip))
         if not movies:
             movies = [("movie-add", "＋ Add a folder…", "Add a Movies or TV Shows folder")]
-        return {"photos": photos, "music": music, "movies": movies}
+        out = {"photos": photos, "music": music, "movies": movies}
+        for kind, entries in out.items():  # in the user's order (dragged), the rest after as they come
+            order = self.media.folder_order.get(kind, [])
+            entries.sort(key=lambda e: order.index(e[0]) if e[0] in order else len(order))
+        return out
+
+    def move_entry(self, kind: str, key: str, target: str, before: bool) -> None:
+        """A folder dragged within its section: remember the new order."""
+        keys = [k for k, _label, _tip in self.entries()[kind] if k not in FIXED]
+        if key not in keys or target not in keys or key == target:
+            return
+        keys.remove(key)
+        keys.insert(keys.index(target) + (0 if before else 1), key)
+        self.media.folder_order[kind] = keys
+        self.fill()
 
     def fill(self) -> None:
         current = self.list.currentItem()

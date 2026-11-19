@@ -10,6 +10,7 @@ from PIL import Image
 from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -36,6 +37,7 @@ from .photo_edit import SATURATION, SAVED_AS_JPG, Adjustments, Turn, apply, auto
 from .scrub import make_scrubbable
 from .zoom import Zoom, notches
 
+ARROWS = {Qt.Key.Key_Left: (-1, 0), Qt.Key.Key_Right: (1, 0), Qt.Key.Key_Up: (0, -1), Qt.Key.Key_Down: (0, 1)}
 PREVIEW_PIXELS = 2400  # sharp enough for a maximized window
 # (attribute, name, left end, right end, groove colours left -> right)
 SLIDERS = [
@@ -351,10 +353,17 @@ class EditView(QWidget):
         self.print_bar = QWidget()
         pbar = QHBoxLayout(self.print_bar)
         pbar.setContentsMargins(0, 0, 0, 0)
-        self.print_size = QComboBox()
+        # One button per size (the user's request), then White border, then the week.
+        self.print_size = QButtonGroup(self)
+        self.print_size.setExclusive(True)
+        self.size_buttons: dict[str, QPushButton] = {}
         for size in print_size.SIZES:
-            self.print_size.addItem(f"{size.name} ({size.shape})", size.name)
-        self.print_size.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button = QPushButton(f"{size.name} ({size.shape})")
+            button.setCheckable(True)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.print_size.addButton(button)
+            self.size_buttons[size.name] = button
+        self.size_buttons[print_size.SIZES[0].name].setChecked(True)
         self.print_border = QCheckBox("White border")
         self.print_border.setChecked(True)
         self.print_border.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -366,7 +375,7 @@ class EditView(QWidget):
         self.print_week.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.print_week.setToolTip("The week of the scrapbook this print is for: the print copy gets a date taken "
                                    "in that week (cards without a date too)")
-        for w in (QLabel("Size:"), self.print_size, self.print_border, QLabel("  Week:"), self.print_week):
+        for w in (*self.size_buttons.values(), self.print_border, QLabel("  Week:"), self.print_week):
             pbar.addWidget(w)  # (no pixel/DPI/inches text shown: the user's request)
         self.fill_weeks = None  # edit_mode: fills print_week for this photo
         pbar.addStretch(1)
@@ -378,7 +387,7 @@ class EditView(QWidget):
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             pbar.addWidget(b)
         self.print_bar.setVisible(False)
-        self.print_size.currentIndexChanged.connect(lambda _i: self._print_shape())
+        self.print_size.buttonToggled.connect(lambda _b, on: self._print_shape() if on else None)
         self.print_border.toggled.connect(lambda _on: self._print_shape())
         self.printing = False
         self.crop_settings = None  # Photo Manager's settings (remembers "Save as a copy"); set by edit_mode
@@ -617,7 +626,7 @@ class EditView(QWidget):
 
     # ---------------------------------------------------------------- print size
     def chosen_print(self) -> print_size.PrintSize:
-        return print_size.BY_NAME[self.print_size.currentData()]
+        return next(print_size.BY_NAME[name] for name, b in self.size_buttons.items() if b.isChecked())
 
     def _print_shape(self) -> None:
         size, border = self.chosen_print(), self.print_border.isChecked()
@@ -717,6 +726,10 @@ class EditView(QWidget):
                 self.cancel_crop()
             elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 self.apply_print() if self.printing else self.apply_crop()
+            elif key in ARROWS:  # nudge the box (Shift: 10 times as far)
+                step = 10 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
+                dx, dy = ARROWS[key]
+                self.cropper.nudge(dx * step, dy * step)
             return
         if key == Qt.Key.Key_P and not event.modifiers():
             self.start_print()

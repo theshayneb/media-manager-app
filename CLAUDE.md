@@ -30,6 +30,8 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   (`settings.folder_groups`, `MainWindow.set_group`/`_show_group`/`open_folder`).
   And the week groups are the user's scrapbook weeks (`grid.album_week`/`album_week_dates`: Week 1 starts Jan 1,
   a first week under 4 days joins the next full week, the last ends Dec 31).
+  And `preview.CropCanvas`: darker shade, green centre lines, snap to the middle, `nudge`/`centred`; and
+  `open_external_selected` opens every selected file, the Open action also on Shift+X.
 - `print_size.py` (Edit's 🖨 Print size: the user's Affinity crop presets + border macros as one tool; finished
   sizes at 600 DPI, an even 63 px border taken off the photo part, copies to settings.print_folder) and
   `layouts.py`/`layouts_panel.py` (the Layouts tab with Details: pockets read from layout pictures in

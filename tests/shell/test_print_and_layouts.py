@@ -88,7 +88,7 @@ def test_week_prints_and_fit(tmp_path):
     assert (week.tall, week.wide, week.undated) == (2, 1, 1)
     found = {lay.name: lay for lay in layouts.load_layouts("")}
     assert layouts.fit(found["Two 3x4 and a 6x4"], week) == (True, "✓ fits this week")
-    assert layouts.fit(found["Four 3x4"], week) == (False, "✗ needs 2 more tall")
+    assert layouts.fit(found["Four 3x4"], week) == (False, "needs 2 more tall")
     assert layouts.fit(found["Two 6x4"], week)[0] is False
 
 
@@ -109,7 +109,8 @@ def test_print_size_in_the_edit_view(tmp_path):
     assert view.printing and view.print_bar.isVisibleTo(view) and not view.crop_bar.isVisibleTo(view)
     box = view.cropper.box
     assert abs(box.width() / box.height() - print_size.BY_NAME["3x4"].ratio(True)) < 0.01
-    view.print_size.setCurrentIndex(1)  # 6x4 (wide)
+    assert [b.text() for b in view.size_buttons.values()] == ["3x4 (tall)", "6x4 (wide)", "3x8 (tall)", "6x8 (tall)"]
+    view.size_buttons["6x4"].click()  # 6x4 (wide)
     view.print_border.setChecked(False)
     box = view.cropper.box
     assert abs(box.width() / box.height() - 3520 / 2340) < 0.01
@@ -322,7 +323,7 @@ def test_spread_in_the_layouts_panel(tmp_path):
                 if panel.list.item(i).data(Qt.ItemDataRole.UserRole) == "Four 3x4")
     panel.list.itemDoubleClicked.emit(panel.list.item(four))       # this week's right page
     assert layouts.Plan(str(pl)).right(2026, 46) == "Four 3x4"
-    assert "Four 3x4" in panel.right_text.text() and "Week 47's left page will be Four 3x4" in panel.next_page.text()
+    assert "Four 3x4" in panel.right_text.text()
 
     select("w47-0.jpg")
     assert panel.album[1] == 47
@@ -330,6 +331,67 @@ def test_spread_in_the_layouts_panel(tmp_path):
     assert "✓ fits" in panel.spread_verdict.text()        # left page alone: 4 tall of the 6 tall + 1 wide
     texts = {panel.list.item(i).data(Qt.ItemDataRole.UserRole): panel.list.item(i).text()
              for i in range(panel.list.count())}
-    assert "with the left page: ✗ needs 2 more tall" in texts["Four 3x4"]   # 8 tall needed, 6 there
+    assert "with the left page: needs 2 more tall" in texts["Four 3x4"]   # 8 tall needed, 6 there
     assert "with the left page: ✓ fits" in texts["Two 3x4 and a 6x4"]      # 6 tall + 1 wide
+    win.close()
+
+
+def test_crop_box_nudges_and_finds_the_middle(tmp_path):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from media_manager.edit_view import EditView
+
+    pic = tmp_path / "a.jpg"
+    Image.new("RGB", (400, 300), (120, 120, 120)).save(pic)
+    view = EditView()
+    view.resize(900, 700)
+    view.show()
+    view.load(str(pic))
+    view.start_print()
+    cropper = view.cropper
+    assert cropper.centred() == (True, True)  # starts in the middle
+    left = cropper.box.left()
+    QTest.keyClick(view, Qt.Key.Key_Right, Qt.KeyboardModifier.ShiftModifier)
+    assert cropper.box.left() > left and cropper.centred() == (False, True)
+    for _ in range(3):
+        QTest.keyClick(view, Qt.Key.Key_Left, Qt.KeyboardModifier.ShiftModifier)
+    assert cropper.centred()[0] or cropper.box.left() < left  # it stopped at the middle on the way
+    while cropper.box.center().x() < 200 - 0.75 and cropper.box.left() > 0:  # past it: back to the middle
+        QTest.keyClick(view, Qt.Key.Key_Right)
+        if cropper.centred()[0]:
+            break
+    assert cropper.centred()[0]
+    assert view.printing  # the arrows didn't go to the next photo
+    view.close()
+
+
+def test_open_sends_every_selected_file(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    pics = tmp_path / "pics"
+    pics.mkdir()
+    for n in range(3):
+        Image.new("RGB", (8, 8)).save(pics / f"{n}.jpg")
+    opened = []
+    monkeypatch.setattr("PySide6.QtGui.QDesktopServices.openUrl", lambda url: opened.append(url.toLocalFile()))
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.5)
+    photos = win.photos
+    photos.open_folder(str(pics))
+    photos.grid.select_paths([str(pics / "0.jpg"), str(pics / "2.jpg")], current=str(pics / "2.jpg"))
+    from PySide6.QtGui import QAction
+
+    action = next(a for a in photos.findChildren(QAction) if a.text() == "Open" and a.shortcuts())
+    assert [s.toString() for s in action.shortcuts()] == ["Ctrl+O", "Shift+X"]
+    action.trigger()
+    assert sorted(opened) == [str(pics / "0.jpg"), str(pics / "2.jpg")]
     win.close()

@@ -5,7 +5,7 @@ Each layout's picture, its pockets, and whether they're filled by:
 - anywhere else: the print copies in the Project Life folder from the selected photo's week (else this week).
 Weeks are the scrapbook's (photo_manager.ui.grid.album_week). Above the list: the week's spread (layouts.Plan):
 the left page (the back of last week's right page, locked) and the right page you choose (double-click a
-layout, or right-click it), and what next week's locked left page will need."""
+layout, or right-click it)."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from music_manager.ui.workers import Background
-from photo_manager.ui.grid import album_week, album_week_dates
+from photo_manager.ui.grid import album_week
 
 from . import layouts
 
@@ -95,13 +95,6 @@ class LayoutsPanel(QWidget):
         self.spread_verdict = QLabel("")
         self.spread_verdict.setWordWrap(True)
         grid.addWidget(self.spread_verdict, 3, 0, 1, 3)
-        self.next_page = QLabel("")
-        self.next_page.setWordWrap(True)
-        self.next_page.setStyleSheet("color: palette(placeholder-text);")
-        grid.addWidget(self.next_page, 4, 0, 1, 3)
-        self.pick_hint = QLabel("Double-click a layout to use it for this week's right page (right-click: more)")
-        self.pick_hint.setWordWrap(True)
-        self.pick_hint.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
 
         self.heading = QLabel("")
         self.heading.setWordWrap(True)
@@ -131,8 +124,7 @@ class LayoutsPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.addWidget(self.heading)
-        layout.addWidget(self.spread)
-        layout.addWidget(self.pick_hint)
+        layout.addWidget(self.spread)  # (no "Next…"/"Double-click…" wording: it took room, the user said)
         layout.addWidget(self.only_fit)
         layout.addWidget(self.list, 1)
         layout.addWidget(self.note)
@@ -258,7 +250,6 @@ class LayoutsPanel(QWidget):
     def _spread(self) -> tuple[layouts.Layout | None, layouts.Layout | None]:
         """Show this week's spread; returns its (left, right) layouts."""
         self.spread.setVisible(self.album is not None)
-        self.pick_hint.setVisible(self.album is not None)
         if self.album is None:
             return None, None
         year, number, _first, _last = self.album
@@ -285,19 +276,10 @@ class LayoutsPanel(QWidget):
             fits, verdict = layouts.fit(pages, self.week)
             have = self.week.tall + self.week.wide + self.week.square
             self.spread_verdict.setText(f"Spread needs {layouts.describe(layouts.needs(pages))} · "
-                                        f"{verdict if have or fits else '✗ nothing yet'}")
+                                        f"{verdict if have or fits else 'nothing yet'}")
             self.spread_verdict.setStyleSheet(f"color: {FIT_COLOUR if fits else SHORT_COLOUR};")
         else:
             self.spread_verdict.setText("")
-        following = album_week_dates(year, number + 1, self.week_start())
-        if right and following:
-            self.next_page.setText(f"Next: Week {number + 1}'s left page will be {right.name} (the back of this "
-                                   f"page): {layouts.describe(layouts.needs([right]))} — crop for it ahead.")
-        elif right:
-            self.next_page.setText("The last week of the year: next year's album starts with Week 1.")
-        else:
-            self.next_page.setText("")
-        self.next_page.setVisible(bool(self.next_page.text()))
         return left, right
 
     def choose(self, side: str, name: str | None) -> None:

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.10
+
+- Crop and Print size: the cut-off area is darker; the arrow keys nudge the box (Shift: 10× as far); green
+  lines show when the box is in the middle left-right or top-bottom, and dragging or nudging it stops there.
+- Print size: a button for each size (3x4, 6x4, 3x8, 6x8), then White border, then Week.
+- Open (Ctrl+O, and now Shift+X) opens every selected file, not just one (an open Affinity gets them all).
+- Folders panel: drag a folder up or down within its section to put them in your order. While you drag photos
+  over a photo folder, that folder lights up.
+- Layouts: the "Next…" and "Double-click…" lines are gone, and so is the ✗ before "needs…".
+
 ## 0.6.9
 
 - Print size: the bar no longer shows the pixel size, DPI and inches (only Size, White border and Week).
