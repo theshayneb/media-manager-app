@@ -188,6 +188,10 @@ class MediaWindow(QMainWindow):
             self.restoreGeometry(QByteArray.fromBase64(media.window_geometry.encode()))
         if media.window_state:
             self.restoreState(QByteArray.fromBase64(media.window_state.encode()))
+        # Layouts lives behind Details (a tab of it), wherever Details is: also after a saved layout from before
+        # it existed, and when Details is dragged somewhere else.
+        self._layouts_behind_details()
+        self.details_dock.dockLocationChanged.connect(lambda _area: QTimer.singleShot(0, self._layouts_behind_details))
 
         # Keep the list up to date when folders are added, renamed or removed in any part.
         self._wrap(self.music, "_fill_views")
@@ -322,6 +326,9 @@ class MediaWindow(QMainWindow):
         self.tags_dock.setVisible(kind == "music")
         self.details_dock.setVisible(kind == "photos")
         self.layouts_dock.setVisible(kind == "photos")
+        if kind == "photos":
+            self._layouts_behind_details()
+            QTimer.singleShot(0, self._layouts_behind_details)
         if self.edit.active:  # editing a photo: its sliders show with Photos only, in the Folders panel's place
             self.edit.dock.setVisible(kind == "photos")
         self._photo_page()
@@ -333,6 +340,21 @@ class MediaWindow(QMainWindow):
             self.folders_dock.setVisible(self.photos.stack.currentWidget() is self.photos.grid)
         elif not self.folders_dock.isVisible():
             self.folders_dock.show()
+
+    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        super().showEvent(event)
+        # Qt puts a saved layout back once more when the window first shows (a layout from before Layouts
+        # existed would leave it on its own): behind Details again, after that.
+        QTimer.singleShot(0, self._layouts_behind_details)
+        QTimer.singleShot(200, self._layouts_behind_details)
+
+    def _layouts_behind_details(self) -> None:
+        if (self.details_dock.isHidden() or self.layouts_dock.isHidden() or self.details_dock.isFloating()
+                or self.layouts_dock in self.tabifiedDockWidgets(self.details_dock)):
+            return  # (Qt only knows hidden panels' tabs once they show: done again then, by show_kind)
+        self.layouts_dock.setFloating(False)
+        self.tabifyDockWidget(self.details_dock, self.layouts_dock)
+        self.details_dock.raise_()
 
     def _refresh_layouts(self) -> None:
         if self.layouts_dock.isVisible() and not self.layouts.visibleRegion().isEmpty():  # its tab is in front

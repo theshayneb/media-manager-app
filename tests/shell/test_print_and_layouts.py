@@ -116,3 +116,39 @@ def test_print_size_in_the_edit_view(tmp_path):
     assert "3520 × 2340 px" in view.print_info.text()
     view.apply_print()
     assert asked and asked[0][2:] == ("6x4", False) and not view.printing
+
+
+def test_layouts_stays_behind_details_wherever_it_is(tmp_path):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from media_manager.settings import MediaSettings
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    win = build_window()
+    win.show()
+    win.show_kind("photos")
+    assert win.layouts_dock in win.tabifiedDockWidgets(win.details_dock)
+    # The user's layout from before Layouts existed: Details on the left, under Folders.
+    win.removeDockWidget(win.layouts_dock)
+    win.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, win.details_dock)
+    old_state = bytes(win.saveState().toBase64()).decode()
+    win.close()
+    s = MediaSettings.load()
+    s.window_state, s.last_kind = old_state, "photos"
+    s.save()
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.6)  # start-up done (with no photo folder it opens Music)
+    win.show_kind("photos")
+    _wait(lambda: False, 0.2)
+    assert win.dockWidgetArea(win.details_dock) == Qt.DockWidgetArea.LeftDockWidgetArea
+    assert win.layouts_dock in win.tabifiedDockWidgets(win.details_dock)  # behind it, not a panel of its own
+    # Details dragged to the other side: Layouts goes with it.
+    win.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, win.details_dock)
+    _wait(lambda: win.layouts_dock in win.tabifiedDockWidgets(win.details_dock), 2)
+    assert win.dockWidgetArea(win.layouts_dock) == Qt.DockWidgetArea.RightDockWidgetArea
+    win.close()

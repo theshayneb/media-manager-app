@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.5
+
+- Fixed: Layouts showed as a panel of its own (next to Details, taking room) instead of behind Details. It's a
+  tab of Details again, wherever your Details panel is (also if you move it): click Layouts at the bottom of
+  the panel to bring it over Details, Details to go back.
+
 ## 0.6.4
 
 - Edit: 🖨 Print size (P), for the scrapbook. Pick 3x4 (tall), 6x4 (wide), 3x8 or 6x8 and tick White border or
