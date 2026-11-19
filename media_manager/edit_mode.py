@@ -10,6 +10,8 @@ from dataclasses import asdict
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QMessageBox
 
+from photo_manager.core.media import kind
+
 from .edit_view import EditView
 from .photo_edit import can_edit, save_in_photos
 
@@ -139,9 +141,15 @@ class EditMode:
 
         def open_it() -> None:  # double-click / Enter
             path = one_photo()
+            current = photos.grid.current_path()
             if path:
                 self.enter(path)
-            elif photos.grid.current_path():
+            elif current and kind(current) == "affinity":  # an Affinity document: open it in Affinity
+                from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
+
+                QDesktopServices.openUrl(QUrl.fromLocalFile(current))
+            elif current:
                 photos.open_preview()
 
         def crop() -> None:  # right-click → Crop…

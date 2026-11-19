@@ -24,6 +24,8 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   Photo Manager's right-click menu has one hook for it: `extra_menu_items`. Tray: `MediaWindow._build_tray`.
 - Changed inside `photo_manager/` for the ✨ edited mark: `metadata.READ_TAGS`/`Meta.edited`/`EDITED_MARK`
   (EXIF ProcessingSoftware) and `grid.paint_flags` (draws ✨ bottom-right).
+  And for .af (Affinity) files: `media.AFFINITY_EXTS`/kind "affinity", `thumbs.affinity_preview` (its "Thmb" PNG);
+  double-click opens it in Windows' app for .af (edit_mode `open_it`).
 - `print_size.py` (Edit's 🖨 Print size: the user's Affinity crop presets + border macros as one tool; finished
   sizes at 600 DPI, an even 63 px border taken off the photo part, copies to settings.print_folder) and
   `layouts.py`/`layouts_panel.py` (the Layouts tab with Details: pockets read from layout pictures in

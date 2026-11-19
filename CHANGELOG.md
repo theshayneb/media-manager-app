@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.6
+
+- Photos shows Affinity documents (.af) with a thumbnail (the preview Affinity keeps inside the file); double-click
+  or Enter opens one in Affinity (whatever Windows opens .af files with). Nothing is written to them.
+
 ## 0.6.5
 
 - Fixed: Layouts showed as a panel of its own (next to Details, taking room) instead of behind Details. It's a

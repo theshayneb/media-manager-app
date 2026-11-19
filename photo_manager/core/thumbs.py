@@ -29,8 +29,33 @@ Image.MAX_IMAGE_PIXELS = None  # big panoramas are fine; these are the user's ow
 _FFMPEG = shutil.which("ffmpeg")
 
 
+AFFINITY_PREVIEW = b"Thmb\x01\x00\x00\x00"  # Affinity's preview picture (a PNG), near the end of a .af
+
+
+def affinity_preview(path: str) -> Image.Image | None:
+    """The preview picture Affinity stores in its documents (Media Manager: thumbnails for .af files)."""
+    import mmap
+
+    with open(path, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
+        at = data.rfind(AFFINITY_PREVIEW)
+        start = data.find(b"\x89PNG\r\n\x1a\n", at, at + 256) if at >= 0 else -1
+        end = data.find(b"IEND", start) if start >= 0 else -1
+        if end < 0:
+            return None
+        png = data[start:end + 8]
+    with Image.open(BytesIO(png)) as im:
+        return im.convert("RGB")
+
+
 def open_image(path: str, max_size: int | None = None) -> Image.Image:
     """Open an image upright (EXIF orientation applied), optionally downscaled."""
+    if kind(path) == "affinity":  # Media Manager: its preview picture
+        im = affinity_preview(path)
+        if im is None:
+            raise OSError("No preview in this Affinity file")
+        if max_size:
+            im.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        return im
     with Image.open(path) as im:
         if max_size:
             im.draft("RGB", (max_size, max_size))  # fast JPEG downscale
