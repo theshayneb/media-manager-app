@@ -366,9 +366,8 @@ class EditView(QWidget):
         self.print_week.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.print_week.setToolTip("The week of the scrapbook this print is for: the print copy gets a date taken "
                                    "in that week (cards without a date too)")
-        for w in (QLabel("Size:"), self.print_size, self.print_border, QLabel("  Week:"), self.print_week,
-                  self.print_info):
-            pbar.addWidget(w)
+        for w in (QLabel("Size:"), self.print_size, self.print_border, QLabel("  Week:"), self.print_week):
+            pbar.addWidget(w)  # (no pixel/DPI/inches text shown: the user's request)
         self.fill_weeks = None  # edit_mode: fills print_week for this photo
         pbar.addStretch(1)
         save_print = QPushButton("Save print copy (Enter)")

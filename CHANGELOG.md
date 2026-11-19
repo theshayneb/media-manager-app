@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.9
+
+- Print size: the bar no longer shows the pixel size, DPI and inches (only Size, White border and Week).
+
 ## 0.6.8
 
 - Weeks are your scrapbook's weeks everywhere (Group by Week taken, Print size, Layouts): each year's Week 1
