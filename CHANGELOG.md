@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.14
+
+- Fixed: after closing, Media Manager could stay running with its title bar frozen on the screen. It waited for
+  the template tabs to finish reading Digital Templates (every PSD, start to end, in OneDrive: a download for
+  online-only files). Now closing doesn't wait for anything that only reads, and the program always ends.
+- The template tabs read only a PSD's layer list (a few KB), and its thumbnail once (kept with Photos'
+  thumbnails), instead of the whole file every time something in the folder changed.
+
 ## 0.6.13
 
 - Photos shows Photoshop files (.psd) with their picture, at any thumbnail size; double-click opens one in its

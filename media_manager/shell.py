@@ -261,6 +261,7 @@ class MediaWindow(QMainWindow):
         from .layouts_panel import TemplatesPanel
 
         self.templates = TemplatesPanel(media)
+        self.templates.cache_dir = getattr(self.photos.model, "cache_dir", None)  # thumbnails kept on disk
         self.templates_dock = self._dock("Photo Templates", "media-photo-templates", self.templates)
         self._watch_templates()
         self.layouts_dock.visibilityChanged.connect(lambda shown: self.layouts.refresh() if shown else None)
@@ -738,10 +739,11 @@ class MediaWindow(QMainWindow):
         self._remember_widths()
         self._write_companion()
         self.watch_timer.stop()
-        self.watch_bg.shutdown(5000)
-        self.layouts.bg.shutdown(5000)
-        self.templates_bg.shutdown(5000)
-        self.templates.bg.shutdown(5000)
+        # Only reading (new videos, layouts, templates): don't wait for it to close (a template in OneDrive that
+        # is still downloading kept 0.6.12 open, frozen, after its window was closed).
+        for bg in (self.watch_bg, self.layouts.bg, self.templates_bg, self.templates.bg):
+            bg.pool.clear()
+            bg.shutdown(300)
         for part in (self.movies, self.music, self.photos):
             part.close()  # each saves its own settings and stops its work
         try:

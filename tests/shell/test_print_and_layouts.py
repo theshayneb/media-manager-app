@@ -479,3 +479,47 @@ def test_photo_templates_follow_the_folder(tmp_path):
     panel.list.itemClicked.emit(panel.list.item(0))  # fold the group
     assert texts() == ["▸  4x4 · 1"] and win.media.template_folded == ["4x4"]
     win.close()
+
+
+def test_closing_doesnt_wait_for_slow_reading(tmp_path):
+    """0.6.12 stayed open (frozen on the screen) while a template in OneDrive was still being read."""
+    import threading
+    import time
+
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.5)
+    release = threading.Event()
+    for bg in (win.templates_bg, win.templates.bg, win.layouts.bg, win.watch_bg):
+        bg.run(lambda: release.wait(30))  # a file that takes "forever" to read
+    started = time.time()
+    win.close()
+    assert time.time() - started < 5
+    release.set()
+
+
+def test_psd_layers_reads_only_the_layer_list(tmp_path, monkeypatch):
+    psd = tmp_path / "3x4 - Card.psd"
+    make_psd(psd, 900, 1200, [("clip photo", (192, 169, 708, 721), False)])
+    with open(psd, "ab") as f:
+        f.write(b"\0" * 5_000_000)  # the pictures (never read)
+    read = []
+    real_open = open
+
+    def counting_open(path, mode="r", *a, **k):  # type: ignore[no-untyped-def]
+        f = real_open(path, mode, *a, **k)
+        if str(path) == str(psd):
+            original = f.read
+            f.read = lambda n=-1: (read.append(n), original(n))[1]
+        return f
+
+    monkeypatch.setattr("builtins.open", counting_open)
+    assert [s.shape for s in layouts.psd_spots(str(psd))] == ["square"]
+    assert -1 not in read and sum(read) < 10_000

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -140,5 +141,9 @@ def main(argv: list[str] | None = None) -> int:
     window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
     window.show()
     code = app.exec()
-    del window
-    return code
+    # Everything that writes was finished and saved when the window closed (each part's closeEvent); any
+    # reading still going on in the background (a slow network or OneDrive file) mustn't keep the program
+    # running, with its window frozen on the screen, so it ends here.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)

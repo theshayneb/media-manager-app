@@ -334,6 +334,7 @@ class TemplatesPanel(QWidget):
     def __init__(self, media, parent: QWidget | None = None):  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self.media = media
+        self.cache_dir = None  # the shell sets Photos' thumbnail cache folder
         self.bg = Background(2)
         self.groups: dict[str, list[layouts.Template]] = {}
         self._icons: dict[tuple[str, float], QIcon] = {}
@@ -404,7 +405,10 @@ class TemplatesPanel(QWidget):
             return
 
         def make():  # type: ignore[no-untyped-def]
-            return layouts.template_image(path, 192)
+            from photo_manager.core.thumbs import thumbnail
+
+            # Photos' thumbnail cache on disk: a template is read (and, online-only, downloaded) once.
+            return thumbnail(path, 192, self.cache_dir) or layouts.template_image(path, 192)
 
         def done(image, _error) -> None:  # type: ignore[no-untyped-def]
             if image is None:

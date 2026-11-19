@@ -97,52 +97,57 @@ def find_pockets(image: Image.Image) -> list[Pocket]:
 # ------------------------------------------------------------------ PSD templates
 def psd_layers(path: str) -> tuple[int, int, list[tuple[str, int, int, int, int, bool]]]:
     """(width, height, [(name, left, top, right, bottom, is_text)]) of a Photoshop file's layers, read straight
-    from the file (no Photoshop library needed)."""
+    from the file (no Photoshop library needed). Only the layer list is read (a few KB near the start), not the
+    pictures (MBs): a template in OneDrive that's online-only isn't downloaded just for this."""
     with open(path, "rb") as f:
-        data = f.read()
-    if data[:4] != b"8BPS":
-        raise ValueError("Not a PSD")
-    psb = struct.unpack_from(">H", data, 4)[0] == 2
-    height, width = struct.unpack_from(">II", data, 14)
-    pos = 26
-    pos += 4 + struct.unpack_from(">I", data, pos)[0]  # colour mode data
-    pos += 4 + struct.unpack_from(">I", data, pos)[0]  # image resources
-    big = ">Q" if psb else ">I"
-    step = 8 if psb else 4
-    if struct.unpack_from(big, data, pos)[0] == 0:
-        return width, height, []
-    pos += step
-    if struct.unpack_from(big, data, pos)[0] == 0:  # no layer info
-        return width, height, []
-    pos += step
-    count = abs(struct.unpack_from(">h", data, pos)[0])
-    pos += 2
-    layers = []
-    for _ in range(count):
-        top, left, bottom, right = struct.unpack_from(">iiii", data, pos)
-        channels = struct.unpack_from(">H", data, pos + 16)[0]
-        pos += 18 + channels * (10 if psb else 6) + 12  # channel info, blend mode, opacity, clipping, flags…
-        extra = struct.unpack_from(">I", data, pos)[0]
-        start = pos + 4
-        e = start
-        e += 4 + struct.unpack_from(">I", data, e)[0]  # layer mask
-        e += 4 + struct.unpack_from(">I", data, e)[0]  # blending ranges
-        n = data[e]
-        name = data[e + 1:e + 1 + n].decode("latin-1")
-        e += (1 + n + 3) // 4 * 4
-        text = False
-        while e + 12 <= start + extra:  # additional layer information
-            key = data[e + 4:e + 8]
-            length = struct.unpack_from(">I", data, e + 8)[0]
-            if key == b"luni":  # the full (Unicode) name
-                chars = struct.unpack_from(">I", data, e + 12)[0]
-                name = data[e + 16:e + 16 + chars * 2].decode("utf-16-be", "replace").rstrip("\x00")
-            elif key in (b"TySh", b"tySh"):
-                text = True
-            e += 12 + length + (length % 2)
-        layers.append((name, left, top, right, bottom, text))
-        pos = start + extra
+        def read(n: int) -> bytes:
+            data = f.read(n)
+            if len(data) < n:
+                raise ValueError("A damaged PSD")
+            return data
+
+        head = read(26)
+        if head[:4] != b"8BPS":
+            raise ValueError("Not a PSD")
+        psb = struct.unpack_from(">H", head, 4)[0] == 2
+        height, width = struct.unpack_from(">II", head, 14)
+        for _ in range(2):  # colour mode data, image resources
+            f.seek(struct.unpack(">I", read(4))[0], 1)
+        size = ">Q" if psb else ">I"
+        step = 8 if psb else 4
+        if struct.unpack(size, read(step))[0] == 0:  # no layer and mask info
+            return width, height, []
+        if struct.unpack(size, read(step))[0] == 0:  # no layer info
+            return width, height, []
+        count = abs(struct.unpack(">h", read(2))[0])
+        layers = []
+        for _ in range(count):
+            fixed = read(18)
+            top, left, bottom, right = struct.unpack_from(">iiii", fixed)
+            channels = struct.unpack_from(">H", fixed, 16)[0]
+            f.seek(channels * (10 if psb else 6) + 12, 1)  # channel info, blend mode, opacity, flags…
+            extra = read(struct.unpack(">I", read(4))[0])
+            e = 0
+            e += 4 + struct.unpack_from(">I", extra, e)[0]  # layer mask
+            e += 4 + struct.unpack_from(">I", extra, e)[0]  # blending ranges
+            n = extra[e]
+            name = extra[e + 1:e + 1 + n].decode("latin-1")
+            e += (1 + n + 3) // 4 * 4
+            text = False
+            while e + 12 <= len(extra):  # additional layer information
+                key = extra[e + 4:e + 8]
+                length = struct.unpack_from(">I", extra, e + 8)[0]
+                if key == b"luni":  # the full (Unicode) name
+                    chars = struct.unpack_from(">I", extra, e + 12)[0]
+                    name = extra[e + 16:e + 16 + chars * 2].decode("utf-16-be", "replace").rstrip("\x00")
+                elif key in (b"TySh", b"tySh"):
+                    text = True
+                e += 12 + length + (length % 2)
+            layers.append((name, left, top, right, bottom, text))
     return width, height, layers
+
+
+_SPOTS: dict[tuple[str, float, int], list[Pocket]] = {}  # (path, modified, size): read once per version
 
 
 def psd_spots(path: str) -> list[Pocket]:
@@ -233,7 +238,11 @@ def load_templates(folder: str) -> dict[str, list[Template]]:
         spots = None
         if entry.suffix.lower() == ".psd":
             try:
-                spots = psd_spots(str(entry))
+                st = entry.stat()
+                key = (str(entry), st.st_mtime, st.st_size)
+                if key not in _SPOTS:
+                    _SPOTS[key] = psd_spots(str(entry))
+                spots = _SPOTS[key]
             except Exception:  # noqa: BLE001
                 spots = []
         groups.setdefault(group, []).append(Template(entry.stem, str(entry), group, spots))
