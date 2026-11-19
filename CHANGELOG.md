@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.11
+
+- The Layouts tab is now "6x8": your hand-drawn PL pages and the 6x8 PSDs ("6x8 - …"). A PSD's photo spots are
+  its layers named with "photo" (photo, clip photo, 1-PHOTO, PHOTO HERE…), counted tall/wide like pockets.
+- New tabs behind Details for the other templates in Digital Templates, by the size their names start with:
+  3x4 + 6x4, 3x8, 4x4, and Other (6x12, and anything without a size). Each shows the thumbnail, the name and
+  how many photo spots it has; double-click opens it (in Affinity).
+- All the tabs update by themselves when you add, rename or delete a template (a renamed one moves to its new
+  tab). Subfolders of Digital Templates count too.
+
 ## 0.6.10
 
 - Crop and Print size: the cut-off area is darker; the arrow keys nudge the box (Shift: 10× as far); green

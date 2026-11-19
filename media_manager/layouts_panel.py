@@ -39,6 +39,25 @@ from . import layouts
 FIT_COLOUR, SHORT_COLOUR = "#7cc47c", "#d8a050"
 
 
+_ICONS: dict[tuple[str, float], QIcon] = {}
+
+
+def layout_icon(path: str) -> QIcon | None:
+    """A layout's picture for the list (PSDs too), made once per version of the file."""
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return None
+    if key not in _ICONS:
+        image = layouts.template_image(path, 192)
+        if image is None:
+            return None
+        from photo_manager.ui.grid import pil_to_qimage
+
+        _ICONS[key] = QIcon(QPixmap.fromImage(pil_to_qimage(image)))
+    return _ICONS[key]
+
+
 def pocket_picture(layout: layouts.Layout | None, mirrored: bool = False, w: int = 45, h: int = 60) -> QPixmap:
     """A small drawing of the layout's pockets (mirrored: the back of the sheet, as the next left page)."""
     pix = QPixmap(w, h)
@@ -219,10 +238,9 @@ class LayoutsPanel(QWidget):
             if self.only_fit.isChecked() and not fits:
                 continue
             item = QListWidgetItem(f"{layout.name}\n{layout.summary()}\n{verdict}")
-            pixmap = QPixmap(layout.path)
-            if not pixmap.isNull():
-                item.setIcon(QIcon(pixmap.scaled(144, 192, Qt.AspectRatioMode.KeepAspectRatio,
-                                                 Qt.TransformationMode.SmoothTransformation)))
+            icon = layout_icon(layout.path)
+            if icon is not None:
+                item.setIcon(icon)
             item.setForeground(QColor(FIT_COLOUR if fits else SHORT_COLOUR))
             item.setToolTip(layout.path + ("  (built in)" if layout.built_in else ""))
             item.setData(Qt.ItemDataRole.UserRole, layout.name)
@@ -304,3 +322,66 @@ class LayoutsPanel(QWidget):
         if not locked:
             menu.addAction(f"Use for Week {number}'s left page", lambda: self.choose("left", name))
         menu.exec(self.list.viewport().mapToGlobal(pos))
+
+
+class TemplatesPanel(QWidget):
+    """One size's templates from Digital Templates (3x4 & 6x4, 3x8, 4x4, Other): a thumbnail, the name and its
+    photo spots, to look at; double-click (or Enter) opens one in its program (Affinity). The shell fills it."""
+
+    def __init__(self, tab: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.tab = tab
+        self.bg = Background(2)
+        self._icons: dict[tuple[str, float], QIcon] = {}
+        self.list = QListWidget()
+        self.list.setIconSize(QSize(72, 96))
+        self.list.setSpacing(3)
+        self.list.setWordWrap(True)
+        self.list.itemActivated.connect(self._open)
+        self.note = QLabel("")
+        self.note.setWordWrap(True)
+        self.note.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.addWidget(self.list, 1)
+        layout.addWidget(self.note)
+
+    def set_templates(self, templates: list[layouts.Template]) -> None:
+        self.list.clear()
+        for t in templates:
+            item = QListWidgetItem(f"{t.name}\n{t.summary()}")
+            item.setData(Qt.ItemDataRole.UserRole, t.path)
+            item.setToolTip(t.path)
+            self.list.addItem(item)
+            self._icon(item, t.path)
+        self.note.setText("" if templates else f"No {self.tab} templates in the Digital Templates folder "
+                          "(their names start with the size, e.g. \"3x4 - …\").")
+        self.note.setVisible(not templates)
+
+    def _icon(self, item: QListWidgetItem, path: str) -> None:
+        try:
+            key = (path, os.path.getmtime(path))
+        except OSError:
+            return
+        if key in self._icons:
+            item.setIcon(self._icons[key])
+            return
+
+        def make():  # type: ignore[no-untyped-def]
+            return layouts.template_image(path, 192)
+
+        def done(image, _error) -> None:  # type: ignore[no-untyped-def]
+            if image is None:
+                return
+            from photo_manager.ui.grid import pil_to_qimage
+
+            icon = QIcon(QPixmap.fromImage(pil_to_qimage(image)))
+            self._icons[key] = icon
+            for row in range(self.list.count()):  # (the list may have been filled again meanwhile)
+                if self.list.item(row).data(Qt.ItemDataRole.UserRole) == path:
+                    self.list.item(row).setIcon(icon)
+
+        self.bg.run(make, done)
+
+    def _open(self, item: QListWidgetItem) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(item.data(Qt.ItemDataRole.UserRole)))

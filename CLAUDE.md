@@ -38,7 +38,10 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   settings.layouts_folder + assets/layouts; fit against the week's print copies, or, inside the print
   folder, the grid group of the selected picture; the spread = `layouts.Plan`, "Layout plan.json" in the print
   folder: right page chosen, next week's left page = its back, locked). Print size's Week sets the copy's date
-  (`print_size.week_date`). Not built yet, on purpose: the half-width insert,
+  (`print_size.week_date`). Template tabs (`layouts.TABS`/`tab_of` by the file name's size, "PL …" = 6x8;
+  `psd_layers`/`psd_spots`: a PSD's layers named "photo" are its photo spots; `TemplatesPanel`), all behind
+  Details (`MediaWindow._behind_details`), refilled by a QFileSystemWatcher on settings.layouts_folder.
+  Not built yet, on purpose: the half-width insert,
   dragging photos into pockets, and a pocket starting Print size with its size.
 - `zoom.py`: mouse-wheel zoom/pan, used by the Edit window and patched into Photo Manager's preview CropCanvas.
 - `android/`: the Android companion app (Kotlin; user's choice). `core/` is plain Kotlin and tested here

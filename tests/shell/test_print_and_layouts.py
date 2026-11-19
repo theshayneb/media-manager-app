@@ -64,10 +64,10 @@ def test_the_three_layouts_are_read_from_their_pictures():
 
 
 def test_a_layout_in_the_folder_replaces_the_same_built_in_one(tmp_path):
-    (tmp_path / "My four.jpg").write_bytes((layouts.BUILT_IN / "Four 3x4.jpg").read_bytes())
+    (tmp_path / "PL My four.jpg").write_bytes((layouts.BUILT_IN / "Four 3x4.jpg").read_bytes())
     (tmp_path / "notes.txt").write_text("not a picture")
     names = [lay.name for lay in layouts.load_layouts(str(tmp_path))]
-    assert names[0] == "My four" and "Four 3x4" not in names and len(names) == 3
+    assert names[0] == "PL My four" and "Four 3x4" not in names and len(names) == 3
 
 
 def test_week_prints_and_fit(tmp_path):
@@ -148,7 +148,9 @@ def test_layouts_stays_behind_details_wherever_it_is(tmp_path):
     win.show_kind("photos")
     _wait(lambda: False, 0.2)
     assert win.dockWidgetArea(win.details_dock) == Qt.DockWidgetArea.LeftDockWidgetArea
-    assert win.layouts_dock in win.tabifiedDockWidgets(win.details_dock)  # behind it, not a panel of its own
+    behind = win.tabifiedDockWidgets(win.details_dock)
+    assert win.layouts_dock in behind  # behind it, not a panel of its own
+    assert all(d in behind for d in win.template_docks)  # and the other size tabs
     # Details dragged to the other side: Layouts goes with it.
     win.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, win.details_dock)
     _wait(lambda: win.layouts_dock in win.tabifiedDockWidgets(win.details_dock), 2)
@@ -395,4 +397,72 @@ def test_open_sends_every_selected_file(tmp_path, monkeypatch):
     assert [s.toString() for s in action.shortcuts()] == ["Ctrl+O", "Shift+X"]
     action.trigger()
     assert sorted(os.path.normpath(p) for p in opened) == [str(pics / "0.jpg"), str(pics / "2.jpg")]
+    win.close()
+
+
+def make_psd(path, width, height, layers):
+    """A bare Photoshop file with named layers (left, top, right, bottom): enough for the layer reader."""
+    import struct
+
+    records = b""
+    for name, (left, top, right, bottom), text in layers:
+        raw = name.encode("latin-1", "replace")[:255]
+        pascal = bytes([len(raw)]) + raw
+        pascal += b"\0" * (-len(pascal) % 4)
+        luni_text = name.encode("utf-16-be")
+        luni = struct.pack(">I", len(name)) + luni_text
+        luni += b"\0" * (len(luni) % 2)
+        extra = struct.pack(">I", 0) + struct.pack(">I", 0) + pascal
+        extra += b"8BIMluni" + struct.pack(">I", len(luni)) + luni
+        if text:
+            extra += b"8BIMTySh" + struct.pack(">I", 2) + b"\0\0"
+        records += struct.pack(">iiiiH", top, left, bottom, right, 0) + b"8BIMnorm" + bytes([255, 0, 0, 0])
+        records += struct.pack(">I", len(extra)) + extra
+    info = struct.pack(">h", len(layers)) + records
+    info = struct.pack(">I", len(info)) + info
+    header = b"8BPS" + struct.pack(">H", 1) + b"\0" * 6 + struct.pack(">HIIHH", 3, height, width, 8, 3)
+    data = header + struct.pack(">I", 0) + struct.pack(">I", 0) + struct.pack(">I", len(info)) + info
+    path.write_bytes(data)
+
+
+def test_psd_photo_spots_and_the_size_tabs(tmp_path):
+    assert [layouts.tab_of(n) for n in ("3x4 - ESD - Day of Thanks 1", "6x4 - PP - Photo Templates 21",
+                                       "3x8 - IACB - Comfort & Joy 2", "4x4 - FDD DD 1", "6x8 - PP - Dec Faves",
+                                       "PL 3x4", "6x12 - Big", "Brooklyn")] == [
+        "3x4 + 6x4", "3x4 + 6x4", "3x8", "4x4", "6x8", "6x8", "Other", "Other"]
+    card = tmp_path / "3x4 - Card.psd"
+    make_psd(card, 900, 1200, [("Background", (0, 0, 900, 1200), False), ("clip photo", (192, 169, 708, 721), False),
+                               ("Photo caption", (100, 800, 800, 900), True), ("tiny photo", (0, 0, 10, 10), False)])
+    page = tmp_path / "6x8 - Page.psd"
+    make_psd(page, 1800, 2400, [("Background", (0, 0, 1800, 2400), False), ("1-PHOTO", (100, 100, 800, 1100), False),
+                                ("2-PHOTO", (900, 100, 1700, 700), False)])
+    assert [s.shape for s in layouts.psd_spots(str(card))] == ["square"]  # not the text layer, not the tiny one
+    tabs = layouts.load_templates(str(tmp_path))
+    assert [t.name for t in tabs["3x4 + 6x4"]] == ["3x4 - Card"] and tabs["3x4 + 6x4"][0].summary() == "1 photo spot"
+    six = {lay.name: lay for lay in layouts.load_layouts(str(tmp_path))}
+    assert six["6x8 - Page"].summary() == "1 tall · 1 wide"  # a 6x8 PSD is a layout in the 6x8 tab
+
+
+def test_template_tabs_follow_the_folder(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    templates = tmp_path / "Digital Templates"
+    templates.mkdir()
+    Image.new("RGB", (90, 120), "white").save(templates / "3x4 - Card.png")
+    win = build_window()
+    win.media.layouts_folder = str(templates)
+    win.show()
+    _wait(lambda: False, 0.5)
+    win.show_kind("photos")
+    assert [d.windowTitle() for d in win._behind_details()] == ["6x8", "3x4 + 6x4", "3x8", "4x4", "Other"]
+    win.load_templates()
+    panel = win.templates["3x4 + 6x4"]
+    assert _wait(lambda: panel.list.count() == 1, 5)
+    (templates / "3x4 - Card.png").rename(templates / "4x4 - Card.png")  # renamed: it moves tabs by itself
+    assert _wait(lambda: win.templates["4x4"].list.count() == 1 and panel.list.count() == 0, 10)
     win.close()

@@ -256,7 +256,15 @@ class MediaWindow(QMainWindow):
         from .layouts_panel import LayoutsPanel
 
         self.layouts = LayoutsPanel(media, self.photos)
-        self.layouts_dock = self._dock("Layouts", "media-layouts", self.layouts)
+        self.layouts_dock = self._dock("6x8", "media-layouts", self.layouts)  # the scrapbook pages
+        # The other templates in Digital Templates, by the size their names start with: a tab each.
+        from .layouts import TABS
+        from .layouts_panel import TemplatesPanel
+
+        self.templates = {tab: TemplatesPanel(tab) for tab in TABS[1:]}
+        self.template_docks = [self._dock(tab, "media-templates-" + tab.replace(" ", "").replace("&", "-"), panel)
+                               for tab, panel in self.templates.items()]
+        self._watch_templates()
         self.layouts_dock.visibilityChanged.connect(lambda shown: self.layouts.refresh() if shown else None)
         self._layouts_timer = QTimer(self)  # another photo selected: perhaps another week
         self._layouts_timer.setSingleShot(True)
@@ -274,7 +282,8 @@ class MediaWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.selected_dock)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.tags_dock)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.details_dock)
-        self.tabifyDockWidget(self.details_dock, self.layouts_dock)
+        for dock in self._behind_details():
+            self.tabifyDockWidget(self.details_dock, dock)
         self.details_dock.raise_()
         self.tags_dock.show()
         self.details_dock.show()
@@ -434,7 +443,8 @@ class MediaWindow(QMainWindow):
         self.selected_dock.setVisible(kind == "music")
         self.tags_dock.setVisible(kind == "music")
         self.details_dock.setVisible(kind == "photos")
-        self.layouts_dock.setVisible(kind == "photos")
+        for dock in self._behind_details():
+            dock.setVisible(kind == "photos")
         if kind == "photos":
             self._layouts_behind_details()
             QTimer.singleShot(0, self._layouts_behind_details)
@@ -457,13 +467,63 @@ class MediaWindow(QMainWindow):
         QTimer.singleShot(0, self._layouts_behind_details)
         QTimer.singleShot(200, self._layouts_behind_details)
 
+    def _behind_details(self) -> list[QDockWidget]:
+        """The tabs that live behind Details: 6x8 (Layouts), then the other template sizes."""
+        return [self.layouts_dock, *self.template_docks]
+
     def _layouts_behind_details(self) -> None:
-        if (self.details_dock.isHidden() or self.layouts_dock.isHidden() or self.details_dock.isFloating()
-                or self.layouts_dock in self.tabifiedDockWidgets(self.details_dock)):
+        if self.details_dock.isHidden() or self.details_dock.isFloating():
             return  # (Qt only knows hidden panels' tabs once they show: done again then, by show_kind)
-        self.layouts_dock.setFloating(False)
-        self.tabifyDockWidget(self.details_dock, self.layouts_dock)
-        self.details_dock.raise_()
+        tabbed = self.tabifiedDockWidgets(self.details_dock)
+        moved = False
+        for dock in self._behind_details():
+            if dock.isHidden() or dock in tabbed:
+                continue
+            # (Qt won't move a panel that's in another tab group by tabifying alone: out and back in first.)
+            self.removeDockWidget(dock)
+            self.addDockWidget(self.dockWidgetArea(self.details_dock), dock)
+            dock.show()
+            self.tabifyDockWidget(self.details_dock, dock)
+            moved = True
+        if moved:
+            self.details_dock.raise_()
+
+    # ------------------------------------------------------------ Digital Templates (all the tabs)
+    def _watch_templates(self) -> None:
+        """Fill the template tabs, and again when a file in Digital Templates is added, renamed or deleted."""
+        from PySide6.QtCore import QFileSystemWatcher
+
+        from music_manager.ui.workers import Background
+
+        self.templates_bg = Background(1)
+        self.templates_watcher = QFileSystemWatcher(self)
+        self._templates_timer = QTimer(self)
+        self._templates_timer.setSingleShot(True)
+        self._templates_timer.setInterval(1000)  # a burst of changes (copying several files): look once
+        self._templates_timer.timeout.connect(self.load_templates)
+        self.templates_watcher.directoryChanged.connect(lambda _d: self._templates_timer.start())
+        QTimer.singleShot(1500, self.load_templates)
+
+    def load_templates(self) -> None:
+        from . import layouts
+
+        folder = self.media.layouts_folder
+        watched = self.templates_watcher.directories()
+        if watched:
+            self.templates_watcher.removePaths(watched)
+        if os.path.isdir(folder):
+            dirs = [folder] + [os.path.join(r, d) for r, ds, _f in os.walk(folder) for d in ds
+                               if not d.startswith((".", "$", "@", "#"))]
+            self.templates_watcher.addPaths(dirs)
+
+        def done(found, error) -> None:  # type: ignore[no-untyped-def]
+            if error or found is None:
+                return
+            for tab, panel in self.templates.items():
+                panel.set_templates(found.get(tab, []))
+            self.layouts.refresh(force=True, layouts_too=True)  # the 6x8 tab too (a file renamed into it…)
+
+        self.templates_bg.run(lambda: layouts.load_templates(folder), done)
 
     def _refresh_layouts(self) -> None:
         if self.layouts_dock.isVisible() and not self.layouts.visibleRegion().isEmpty():  # its tab is in front
@@ -471,7 +531,7 @@ class MediaWindow(QMainWindow):
 
     # ------------------------------------------------------------ panel widths
     def _docks(self) -> list[QDockWidget]:
-        return [self.folders_dock, self.selected_dock, self.tags_dock, self.details_dock, self.layouts_dock,
+        return [self.folders_dock, self.selected_dock, self.tags_dock, self.details_dock, *self._behind_details(),
                 self.edit.dock]
 
     def _side(self, dock: QDockWidget) -> bool:
@@ -683,6 +743,9 @@ class MediaWindow(QMainWindow):
         self.watch_timer.stop()
         self.watch_bg.shutdown(5000)
         self.layouts.bg.shutdown(5000)
+        self.templates_bg.shutdown(5000)
+        for panel in self.templates.values():
+            panel.bg.shutdown(5000)
         for part in (self.movies, self.music, self.photos):
             part.close()  # each saves its own settings and stops its work
         try:

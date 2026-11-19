@@ -10,6 +10,8 @@ and clicking a pocket to start Print size with that pocket's size.
 from __future__ import annotations
 
 import os
+import re
+import struct
 from collections import deque
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -92,25 +94,162 @@ def find_pockets(image: Image.Image) -> list[Pocket]:
     return pockets
 
 
-def read_layout(path: Path, built_in: bool = False) -> Layout | None:
+# ------------------------------------------------------------------ PSD templates
+def psd_layers(path: str) -> tuple[int, int, list[tuple[str, int, int, int, int, bool]]]:
+    """(width, height, [(name, left, top, right, bottom, is_text)]) of a Photoshop file's layers, read straight
+    from the file (no Photoshop library needed)."""
+    with open(path, "rb") as f:
+        data = f.read()
+    if data[:4] != b"8BPS":
+        raise ValueError("Not a PSD")
+    psb = struct.unpack_from(">H", data, 4)[0] == 2
+    height, width = struct.unpack_from(">II", data, 14)
+    pos = 26
+    pos += 4 + struct.unpack_from(">I", data, pos)[0]  # colour mode data
+    pos += 4 + struct.unpack_from(">I", data, pos)[0]  # image resources
+    big = ">Q" if psb else ">I"
+    step = 8 if psb else 4
+    if struct.unpack_from(big, data, pos)[0] == 0:
+        return width, height, []
+    pos += step
+    if struct.unpack_from(big, data, pos)[0] == 0:  # no layer info
+        return width, height, []
+    pos += step
+    count = abs(struct.unpack_from(">h", data, pos)[0])
+    pos += 2
+    layers = []
+    for _ in range(count):
+        top, left, bottom, right = struct.unpack_from(">iiii", data, pos)
+        channels = struct.unpack_from(">H", data, pos + 16)[0]
+        pos += 18 + channels * (10 if psb else 6) + 12  # channel info, blend mode, opacity, clipping, flags…
+        extra = struct.unpack_from(">I", data, pos)[0]
+        start = pos + 4
+        e = start
+        e += 4 + struct.unpack_from(">I", data, e)[0]  # layer mask
+        e += 4 + struct.unpack_from(">I", data, e)[0]  # blending ranges
+        n = data[e]
+        name = data[e + 1:e + 1 + n].decode("latin-1")
+        e += (1 + n + 3) // 4 * 4
+        text = False
+        while e + 12 <= start + extra:  # additional layer information
+            key = data[e + 4:e + 8]
+            length = struct.unpack_from(">I", data, e + 8)[0]
+            if key == b"luni":  # the full (Unicode) name
+                chars = struct.unpack_from(">I", data, e + 12)[0]
+                name = data[e + 16:e + 16 + chars * 2].decode("utf-16-be", "replace").rstrip("\x00")
+            elif key in (b"TySh", b"tySh"):
+                text = True
+            e += 12 + length + (length % 2)
+        layers.append((name, left, top, right, bottom, text))
+        pos = start + extra
+    return width, height, layers
+
+
+def psd_spots(path: str) -> list[Pocket]:
+    """The photo spots of a PSD template: its layers named with "photo" ("photo", "clip photo", "1-PHOTO",
+    "PHOTO HERE"…), not text layers, not tiny."""
+    width, height, layers = psd_layers(path)
+    spots = []
+    for name, left, top, right, bottom, text in layers:
+        w, h = right - left, bottom - top
+        if text or "photo" not in name.casefold() or w * h < 0.005 * width * height:
+            continue
+        ratio = w / h if h else 1
+        shape = "tall" if ratio < 0.92 else "wide" if ratio > 1.08 else "square"
+        spots.append(Pocket(left / width, top / height, w / width, h / height, shape))
+    spots.sort(key=lambda p: (round(p.y, 1), p.x))
+    return spots
+
+
+def template_image(path: str, size: int) -> Image.Image | None:
+    """A thumbnail of a template: a PSD's flattened picture (as Photoshop saved it), or the picture itself."""
     try:
-        with Image.open(path) as im:
-            im.seek(0)
-            pockets = find_pockets(im)
-    except Exception:  # noqa: BLE001  (not a picture Pillow can read)
+        with Image.open(path) as im:  # (a PSD's frames are its layers: no seek, its own picture is the first)
+            im.thumbnail((size, size), Image.Resampling.LANCZOS)
+            return im.convert("RGB")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# ------------------------------------------------------------------ which tab
+TABS = ["6x8", "3x4 + 6x4", "3x8", "4x4", "Other"]  # ("&" would vanish in a tab's name)
+SIZE_TABS = {"6x8": "6x8", "3x4": "3x4 + 6x4", "6x4": "3x4 + 6x4", "4x6": "3x4 + 6x4", "4x3": "3x4 + 6x4",
+             "3x8": "3x8", "4x4": "4x4"}
+
+
+def tab_of(name: str) -> str:
+    """By the start of the file name: its size ("3x4 - …", "6x8 …"); "PL …" (the hand-drawn Project Life
+    pages) are 6x8; anything else is Other (6x12 too)."""
+    if name.strip().upper().startswith("PL"):
+        return "6x8"
+    m = re.match(r"\s*(\d+)\s*[x×]\s*(\d+)", name, re.IGNORECASE)
+    return SIZE_TABS.get(f"{m.group(1)}x{m.group(2)}", "Other") if m else "Other"
+
+
+@dataclass
+class Template:
+    name: str
+    path: str
+    tab: str
+    spots: list[Pocket] | None  # a PSD's photo spots (None: not a PSD)
+
+    def summary(self) -> str:
+        if self.spots is None:
+            return Path(self.path).suffix.lstrip(".").upper()
+        n = len(self.spots)
+        return f"{n} photo spot{'' if n == 1 else 's'}" if n else "no photo spots found"
+
+
+def template_files(folder: str) -> list[Path]:
+    """Every picture in folder and its subfolders (not hidden ones)."""
+    out: list[Path] = []
+    if not folder or not os.path.isdir(folder):
+        return out
+    for root, dirs, files in os.walk(folder):
+        dirs[:] = sorted(d for d in dirs if not d.startswith((".", "$", "@", "#")))
+        out.extend(Path(root) / f for f in files if Path(f).suffix.lower() in PICTURES)
+    return sorted(out, key=lambda p: p.name.casefold())
+
+
+def load_templates(folder: str) -> dict[str, list[Template]]:
+    """The templates for the tabs other than 6x8 (those are layouts: load_layouts)."""
+    tabs: dict[str, list[Template]] = {tab: [] for tab in TABS[1:]}
+    for entry in template_files(folder):
+        tab = tab_of(entry.stem)
+        if tab == "6x8":
+            continue
+        spots = None
+        if entry.suffix.lower() == ".psd":
+            try:
+                spots = psd_spots(str(entry))
+            except Exception:  # noqa: BLE001
+                spots = []
+        tabs[tab].append(Template(entry.stem, str(entry), tab, spots))
+    return tabs
+
+
+def read_layout(path: Path, built_in: bool = False) -> Layout | None:
+    """A 6x8 page: a PSD's photo spots, or the boxes of a hand-drawn layout picture."""
+    try:
+        if path.suffix.lower() == ".psd":
+            pockets = psd_spots(str(path))
+        else:
+            with Image.open(path) as im:
+                im.seek(0)
+                pockets = find_pockets(im)
+    except Exception:  # noqa: BLE001  (not a picture we can read)
         return None
     return Layout(path.stem, str(path), pockets, built_in) if pockets else None
 
 
 def load_layouts(folder: str) -> list[Layout]:
-    """The folder's layouts (by name), then the built-in ones that aren't the same as one of them."""
+    """The 6x8 tab: the folder's 6x8 layouts ("6x8 …", "PL …"), then the built-in ones unlike any of them."""
     found: list[Layout] = []
-    if folder and os.path.isdir(folder):
-        for entry in sorted(Path(folder).iterdir(), key=lambda p: p.name.casefold()):
-            if entry.is_file() and entry.suffix.lower() in PICTURES:
-                layout = read_layout(entry)
-                if layout:
-                    found.append(layout)
+    for entry in template_files(folder):
+        if tab_of(entry.stem) == "6x8":
+            layout = read_layout(entry)
+            if layout:
+                found.append(layout)
     have = {layout.signature for layout in found}
     for entry in sorted(BUILT_IN.glob("*.jpg")):
         layout = read_layout(entry, built_in=True)
