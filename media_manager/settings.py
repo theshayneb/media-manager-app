@@ -35,6 +35,7 @@ class MediaSettings:
     minimize_to_tray: bool = True  # the minimize button hides the window to the tray
     last_edit: dict = field(default_factory=dict)  # the sliders of the last photo saved ("Same as last edit")
     window_geometry: str = ""
+    template_folded: list = field(default_factory=list)  # Photo Templates' size groups folded shut
     folder_order: dict = field(default_factory=dict)      # Folders list: kind -> its entries' keys, in order
     dock_sizes: dict = field(default_factory=dict)        # panel name -> its width (or height)
     photo_collapsed: dict = field(default_factory=dict)   # "<folder>|<group by>" -> collapsed group titles

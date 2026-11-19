@@ -175,26 +175,34 @@ def template_image(path: str, size: int) -> Image.Image | None:
         return None
 
 
-# ------------------------------------------------------------------ which tab
-TABS = ["6x8", "3x4 + 6x4", "3x8", "4x4", "Other"]  # ("&" would vanish in a tab's name)
-SIZE_TABS = {"6x8": "6x8", "3x4": "3x4 + 6x4", "6x4": "3x4 + 6x4", "4x6": "3x4 + 6x4", "4x3": "3x4 + 6x4",
-             "3x8": "3x8", "4x4": "4x4"}
+# ------------------------------------------------------------------ Layouts or Photo Templates
+# Layouts are the album's page protectors: the user's hand-drawn JPGs whose names start with "PL". Everything
+# else in Digital Templates is a Photo Template (a card or page that goes inside a pocket), grouped by the size
+# its name starts with ("3x4 - …"), else "Other".
+GROUP_ORDER = ["3x4", "6x4", "3x8", "4x4", "6x8", "6x12"]
+OTHER = "Other"
 
 
-def tab_of(name: str) -> str:
-    """By the start of the file name: its size ("3x4 - …", "6x8 …"); "PL …" (the hand-drawn Project Life
-    pages) are 6x8; anything else is Other (6x12 too)."""
-    if name.strip().upper().startswith("PL"):
-        return "6x8"
+def is_layout(path: Path) -> bool:
+    return path.stem.strip().upper().startswith("PL") and path.suffix.lower() in (".jpg", ".jpeg")
+
+
+def size_group(name: str) -> str:
     m = re.match(r"\s*(\d+)\s*[x×]\s*(\d+)", name, re.IGNORECASE)
-    return SIZE_TABS.get(f"{m.group(1)}x{m.group(2)}", "Other") if m else "Other"
+    return f"{m.group(1)}x{m.group(2)}" if m else OTHER
+
+
+def group_sort_key(group: str) -> tuple:
+    if group in GROUP_ORDER:
+        return (0, GROUP_ORDER.index(group))
+    return (2, "") if group == OTHER else (1, group)
 
 
 @dataclass
 class Template:
     name: str
     path: str
-    tab: str
+    group: str
     spots: list[Pocket] | None  # a PSD's photo spots (None: not a PSD)
 
     def summary(self) -> str:
@@ -216,24 +224,25 @@ def template_files(folder: str) -> list[Path]:
 
 
 def load_templates(folder: str) -> dict[str, list[Template]]:
-    """The templates for the tabs other than 6x8 (those are layouts: load_layouts)."""
-    tabs: dict[str, list[Template]] = {tab: [] for tab in TABS[1:]}
+    """The Photo Templates (everything that isn't a Layout), by size group, in the groups' order."""
+    groups: dict[str, list[Template]] = {}
     for entry in template_files(folder):
-        tab = tab_of(entry.stem)
-        if tab == "6x8":
+        if is_layout(entry):
             continue
+        group = size_group(entry.stem)
         spots = None
         if entry.suffix.lower() == ".psd":
             try:
                 spots = psd_spots(str(entry))
             except Exception:  # noqa: BLE001
                 spots = []
-        tabs[tab].append(Template(entry.stem, str(entry), tab, spots))
-    return tabs
+        groups.setdefault(group, []).append(Template(entry.stem, str(entry), group, spots))
+    return dict(sorted(groups.items(), key=lambda kv: group_sort_key(kv[0])))
 
 
 def read_layout(path: Path, built_in: bool = False) -> Layout | None:
-    """A 6x8 page: a PSD's photo spots, or the boxes of a hand-drawn layout picture."""
+    """A Layout's pockets: the boxes of a hand-drawn page-protector picture (a PSD's photo spots, if one is
+    given)."""
     try:
         if path.suffix.lower() == ".psd":
             pockets = psd_spots(str(path))
@@ -247,10 +256,10 @@ def read_layout(path: Path, built_in: bool = False) -> Layout | None:
 
 
 def load_layouts(folder: str) -> list[Layout]:
-    """The 6x8 tab: the folder's 6x8 layouts ("6x8 …", "PL …"), then the built-in ones unlike any of them."""
+    """The Layouts tab: the folder's page-protector layouts ("PL …" JPGs), then the built-in ones unlike any."""
     found: list[Layout] = []
     for entry in template_files(folder):
-        if tab_of(entry.stem) == "6x8":
+        if is_layout(entry):
             layout = read_layout(entry)
             if layout:
                 found.append(layout)

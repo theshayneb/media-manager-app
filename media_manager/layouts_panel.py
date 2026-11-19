@@ -325,19 +325,24 @@ class LayoutsPanel(QWidget):
 
 
 class TemplatesPanel(QWidget):
-    """One size's templates from Digital Templates (3x4 & 6x4, 3x8, 4x4, Other): a thumbnail, the name and its
-    photo spots, to look at; double-click (or Enter) opens one in its program (Affinity). The shell fills it."""
+    """Photo Templates: the cards and pages that go inside a pocket (the PSDs in Digital Templates that aren't
+    Layouts), grouped by the size their names start with (3x4, 6x4, 3x8, 4x4, 6x8, 6x12…, Other). Click a
+    heading to fold it; double-click (or Enter) opens a template in its program (Affinity). The shell fills it."""
 
-    def __init__(self, tab: str, parent: QWidget | None = None):
+    HEADING = Qt.ItemDataRole.UserRole + 1
+
+    def __init__(self, media, parent: QWidget | None = None):  # type: ignore[no-untyped-def]
         super().__init__(parent)
-        self.tab = tab
+        self.media = media
         self.bg = Background(2)
+        self.groups: dict[str, list[layouts.Template]] = {}
         self._icons: dict[tuple[str, float], QIcon] = {}
         self.list = QListWidget()
         self.list.setIconSize(QSize(72, 96))
         self.list.setSpacing(3)
         self.list.setWordWrap(True)
         self.list.itemActivated.connect(self._open)
+        self.list.itemClicked.connect(self._fold)
         self.note = QLabel("")
         self.note.setWordWrap(True)
         self.note.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
@@ -346,17 +351,48 @@ class TemplatesPanel(QWidget):
         layout.addWidget(self.list, 1)
         layout.addWidget(self.note)
 
-    def set_templates(self, templates: list[layouts.Template]) -> None:
+    def set_templates(self, groups: dict[str, list[layouts.Template]]) -> None:
+        self.groups = groups
+        self._fill()
+
+    def _fill(self) -> None:
+        top = self.list.verticalScrollBar().value()
         self.list.clear()
-        for t in templates:
-            item = QListWidgetItem(f"{t.name}\n{t.summary()}")
-            item.setData(Qt.ItemDataRole.UserRole, t.path)
-            item.setToolTip(t.path)
-            self.list.addItem(item)
-            self._icon(item, t.path)
-        self.note.setText("" if templates else f"No {self.tab} templates in the Digital Templates folder "
-                          "(their names start with the size, e.g. \"3x4 - …\").")
-        self.note.setVisible(not templates)
+        folded = set(self.media.template_folded)
+        for group, templates in self.groups.items():
+            shut = group in folded
+            head = QListWidgetItem(f"{'▸' if shut else '▾'}  {group} · {len(templates)}")
+            head.setData(self.HEADING, group)
+            head.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            font = head.font()
+            font.setBold(True)
+            head.setFont(font)
+            head.setForeground(QColor("#9aa0a8"))
+            self.list.addItem(head)
+            if shut:
+                continue
+            for t in templates:
+                item = QListWidgetItem(f"{t.name}\n{t.summary()}")
+                item.setData(Qt.ItemDataRole.UserRole, t.path)
+                item.setToolTip(t.path)
+                self.list.addItem(item)
+                self._icon(item, t.path)
+        self.list.verticalScrollBar().setValue(top)
+        self.note.setText("" if self.groups else "No templates in the Digital Templates folder yet (their names "
+                          "start with the size, e.g. \"3x4 - …\").")
+        self.note.setVisible(not self.groups)
+
+    def _fold(self, item: QListWidgetItem) -> None:
+        group = item.data(self.HEADING)
+        if not group:
+            return
+        folded = list(self.media.template_folded)
+        if group in folded:
+            folded.remove(group)
+        else:
+            folded.append(group)
+        self.media.template_folded = folded
+        self._fill()
 
     def _icon(self, item: QListWidgetItem, path: str) -> None:
         try:
@@ -384,4 +420,6 @@ class TemplatesPanel(QWidget):
         self.bg.run(make, done)
 
     def _open(self, item: QListWidgetItem) -> None:
+        if not item.data(Qt.ItemDataRole.UserRole):
+            return
         QDesktopServices.openUrl(QUrl.fromLocalFile(item.data(Qt.ItemDataRole.UserRole)))

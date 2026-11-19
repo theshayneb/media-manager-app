@@ -256,14 +256,12 @@ class MediaWindow(QMainWindow):
         from .layouts_panel import LayoutsPanel
 
         self.layouts = LayoutsPanel(media, self.photos)
-        self.layouts_dock = self._dock("6x8", "media-layouts", self.layouts)  # the scrapbook pages
-        # The other templates in Digital Templates, by the size their names start with: a tab each.
-        from .layouts import TABS
+        self.layouts_dock = self._dock("Layouts", "media-layouts", self.layouts)  # the page protectors
+        # Photo Templates: the cards that go inside a pocket, grouped by size (one tab).
         from .layouts_panel import TemplatesPanel
 
-        self.templates = {tab: TemplatesPanel(tab) for tab in TABS[1:]}
-        self.template_docks = [self._dock(tab, "media-templates-" + tab.replace(" ", "").replace("&", "-"), panel)
-                               for tab, panel in self.templates.items()]
+        self.templates = TemplatesPanel(media)
+        self.templates_dock = self._dock("Photo Templates", "media-photo-templates", self.templates)
         self._watch_templates()
         self.layouts_dock.visibilityChanged.connect(lambda shown: self.layouts.refresh() if shown else None)
         self._layouts_timer = QTimer(self)  # another photo selected: perhaps another week
@@ -468,8 +466,8 @@ class MediaWindow(QMainWindow):
         QTimer.singleShot(200, self._layouts_behind_details)
 
     def _behind_details(self) -> list[QDockWidget]:
-        """The tabs that live behind Details: 6x8 (Layouts), then the other template sizes."""
-        return [self.layouts_dock, *self.template_docks]
+        """The tabs that live behind Details: Layouts, then Photo Templates."""
+        return [self.layouts_dock, self.templates_dock]
 
     def _layouts_behind_details(self) -> None:
         if self.details_dock.isHidden() or self.details_dock.isFloating():
@@ -519,8 +517,7 @@ class MediaWindow(QMainWindow):
         def done(found, error) -> None:  # type: ignore[no-untyped-def]
             if error or found is None:
                 return
-            for tab, panel in self.templates.items():
-                panel.set_templates(found.get(tab, []))
+            self.templates.set_templates(found)
             self.layouts.refresh(force=True, layouts_too=True)  # the 6x8 tab too (a file renamed into it…)
 
         self.templates_bg.run(lambda: layouts.load_templates(folder), done)
@@ -744,8 +741,7 @@ class MediaWindow(QMainWindow):
         self.watch_bg.shutdown(5000)
         self.layouts.bg.shutdown(5000)
         self.templates_bg.shutdown(5000)
-        for panel in self.templates.values():
-            panel.bg.shutdown(5000)
+        self.templates.bg.shutdown(5000)
         for part in (self.movies, self.music, self.photos):
             part.close()  # each saves its own settings and stops its work
         try:

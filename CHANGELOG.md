@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.12
+
+- Two tabs behind Details instead of five:
+  - Layouts (as before 0.6.11): only your page-protector layouts, the "PL …" JPGs (and the three built in),
+    with the week's spread, the plan and "fits".
+  - Photo Templates: every other template in Digital Templates (the cards and pages that go inside a pocket),
+    grouped by the size their names start with: 3x4, 6x4, 3x8, 4x4, 6x8, 6x12 (any other size gets its own
+    group too), then Other. Click a heading to fold it; double-click a template to open it in Affinity.
+  Both update by themselves when you add or rename a file.
+
 ## 0.6.11
 
 - The Layouts tab is now "6x8": your hand-drawn PL pages and the 6x8 PSDs ("6x8 - …"). A PSD's photo spots are

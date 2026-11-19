@@ -150,7 +150,7 @@ def test_layouts_stays_behind_details_wherever_it_is(tmp_path):
     assert win.dockWidgetArea(win.details_dock) == Qt.DockWidgetArea.LeftDockWidgetArea
     behind = win.tabifiedDockWidgets(win.details_dock)
     assert win.layouts_dock in behind  # behind it, not a panel of its own
-    assert all(d in behind for d in win.template_docks)  # and the other size tabs
+    assert win.templates_dock in behind  # and Photo Templates
     # Details dragged to the other side: Layouts goes with it.
     win.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, win.details_dock)
     _wait(lambda: win.layouts_dock in win.tabifiedDockWidgets(win.details_dock), 2)
@@ -425,25 +425,30 @@ def make_psd(path, width, height, layers):
     path.write_bytes(data)
 
 
-def test_psd_photo_spots_and_the_size_tabs(tmp_path):
-    assert [layouts.tab_of(n) for n in ("3x4 - ESD - Day of Thanks 1", "6x4 - PP - Photo Templates 21",
-                                       "3x8 - IACB - Comfort & Joy 2", "4x4 - FDD DD 1", "6x8 - PP - Dec Faves",
-                                       "PL 3x4", "6x12 - Big", "Brooklyn")] == [
-        "3x4 + 6x4", "3x4 + 6x4", "3x8", "4x4", "6x8", "6x8", "Other", "Other"]
+def test_psd_photo_spots_and_the_two_tabs(tmp_path):
+    assert [layouts.size_group(n) for n in ("3x4 - ESD - Day of Thanks 1", "6x4 - PP - Photo Templates 21",
+                                           "3x8 - IACB - Comfort & Joy 2", "4x4 - FDD DD 1", "6x8 - PP - Dec Faves",
+                                           "6x12 - Big", "Brooklyn")] == [
+        "3x4", "6x4", "3x8", "4x4", "6x8", "6x12", "Other"]
+    assert layouts.is_layout(Path("PL 3x4.jpg")) and not layouts.is_layout(Path("PL 3x4.psd"))
+    assert not layouts.is_layout(Path("3x4 - Card.jpg"))
     card = tmp_path / "3x4 - Card.psd"
     make_psd(card, 900, 1200, [("Background", (0, 0, 900, 1200), False), ("clip photo", (192, 169, 708, 721), False),
                                ("Photo caption", (100, 800, 800, 900), True), ("tiny photo", (0, 0, 10, 10), False)])
     page = tmp_path / "6x8 - Page.psd"
     make_psd(page, 1800, 2400, [("Background", (0, 0, 1800, 2400), False), ("1-PHOTO", (100, 100, 800, 1100), False),
                                 ("2-PHOTO", (900, 100, 1700, 700), False)])
+    (tmp_path / "PL Mine.jpg").write_bytes((layouts.BUILT_IN / "Two 6x4.jpg").read_bytes())
+    (tmp_path / "Brooklyn.png").write_bytes((layouts.BUILT_IN / "Two 6x4.jpg").read_bytes())
     assert [s.shape for s in layouts.psd_spots(str(card))] == ["square"]  # not the text layer, not the tiny one
-    tabs = layouts.load_templates(str(tmp_path))
-    assert [t.name for t in tabs["3x4 + 6x4"]] == ["3x4 - Card"] and tabs["3x4 + 6x4"][0].summary() == "1 photo spot"
-    six = {lay.name: lay for lay in layouts.load_layouts(str(tmp_path))}
-    assert six["6x8 - Page"].summary() == "1 tall · 1 wide"  # a 6x8 PSD is a layout in the 6x8 tab
+    groups = layouts.load_templates(str(tmp_path))
+    assert list(groups) == ["3x4", "6x8", "Other"]  # in the size order; Other last; no Layouts among them
+    assert groups["3x4"][0].summary() == "1 photo spot" and groups["6x8"][0].summary() == "2 photo spots"
+    names = [lay.name for lay in layouts.load_layouts(str(tmp_path))]
+    assert names[0] == "PL Mine" and "6x8 - Page" not in names  # Layouts: only the PL JPGs (and built-ins)
 
 
-def test_template_tabs_follow_the_folder(tmp_path):
+def test_photo_templates_follow_the_folder(tmp_path):
     from PySide6.QtWidgets import QApplication
 
     QApplication.instance() or QApplication([])
@@ -459,12 +464,18 @@ def test_template_tabs_follow_the_folder(tmp_path):
     win.show()
     _wait(lambda: False, 0.5)
     win.show_kind("photos")
-    assert [d.windowTitle() for d in win._behind_details()] == ["6x8", "3x4 + 6x4", "3x8", "4x4", "Other"]
+    assert [d.windowTitle() for d in win._behind_details()] == ["Layouts", "Photo Templates"]
     win.load_templates()
-    panel = win.templates["3x4 + 6x4"]
-    assert _wait(lambda: panel.list.count() == 1, 5)
+    panel = win.templates
+
+    def texts():
+        return [panel.list.item(i).text() for i in range(panel.list.count())]
+
+    assert _wait(lambda: texts() == ["▾  3x4 · 1", "3x4 - Card\nPNG"], 5)
     panel.bg.wait(5000)  # its thumbnail made
     _wait(lambda: False, 0.2)
-    (templates / "3x4 - Card.png").rename(templates / "4x4 - Card.png")  # renamed: it moves tabs by itself
-    assert _wait(lambda: win.templates["4x4"].list.count() == 1 and panel.list.count() == 0, 10)
+    (templates / "3x4 - Card.png").rename(templates / "4x4 - Card.png")  # renamed: it moves groups by itself
+    assert _wait(lambda: texts() == ["▾  4x4 · 1", "4x4 - Card\nPNG"], 10)
+    panel.list.itemClicked.emit(panel.list.item(0))  # fold the group
+    assert texts() == ["▸  4x4 · 1"] and win.media.template_folded == ["4x4"]
     win.close()
