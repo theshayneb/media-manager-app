@@ -463,6 +463,8 @@ def test_template_tabs_follow_the_folder(tmp_path):
     win.load_templates()
     panel = win.templates["3x4 + 6x4"]
     assert _wait(lambda: panel.list.count() == 1, 5)
+    panel.bg.wait(5000)  # its thumbnail made
+    _wait(lambda: False, 0.2)
     (templates / "3x4 - Card.png").rename(templates / "4x4 - Card.png")  # renamed: it moves tabs by itself
     assert _wait(lambda: win.templates["4x4"].list.count() == 1 and panel.list.count() == 0, 10)
     win.close()

@@ -163,8 +163,12 @@ def psd_spots(path: str) -> list[Pocket]:
 
 def template_image(path: str, size: int) -> Image.Image | None:
     """A thumbnail of a template: a PSD's flattened picture (as Photoshop saved it), or the picture itself."""
+    from io import BytesIO
+
     try:
-        with Image.open(path) as im:  # (a PSD's frames are its layers: no seek, its own picture is the first)
+        # Read in one go, so the file isn't held open (you may be renaming it in Explorer meanwhile).
+        data = Path(path).read_bytes()
+        with Image.open(BytesIO(data)) as im:  # (a PSD's frames are its layers: no seek, its picture is first)
             im.thumbnail((size, size), Image.Resampling.LANCZOS)
             return im.convert("RGB")
     except Exception:  # noqa: BLE001
