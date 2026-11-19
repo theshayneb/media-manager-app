@@ -1,6 +1,6 @@
 [project]
 name = "media-manager"
-version = "0.6.12"
+version = "0.6.13"
 description = "Photos & videos, music, movies & TV: review, tag, rename, move and play your media (Windows)."
 requires-python = ">=3.11"
 dependencies = ["PySide6>=6.7,<7", "Pillow>=11.2", "pillow-heif>=0.18", "mutagen>=1.47", "send2trash>=1.8"]

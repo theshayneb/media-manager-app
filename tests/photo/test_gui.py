@@ -1492,3 +1492,38 @@ def test_album_weeks():
     assert album_week(date(2023, 1, 1))[1:] == (1, date(2023, 1, 1), date(2023, 1, 7))  # a Sunday: a full week
     assert album_week_dates(2026, 46) == (date(2026, 11, 15), date(2026, 11, 21))
     assert album_week_dates(2026, 53) is None
+
+
+def test_template_size_groups(window, tmp_path):
+    from PIL import Image
+
+    win, _folder, _ = window
+    templates = tmp_path / "Digital Templates"
+    templates.mkdir()
+    for name in ("3x4 - Card.png", "6x4 - Wide.png", "PL 3x4.jpg", "6x12 - Big.png", "Brooklyn.png",
+                 "4x4 - Square.png", "10x10 - Huge.png"):
+        Image.new("RGB", (40, 30)).save(templates / name)
+    win.open_folder(str(templates))
+    win.set_group("size")
+    assert headers(win) == ["Layouts (PL)", "3x4", "6x4", "4x4", "6x12", "10x10", "No size in the name"]
+
+
+def write_psd(path, width, height, rgb):
+    """A flat Photoshop file (its picture only, raw)."""
+    import struct
+
+    header = b"8BPS" + struct.pack(">H", 1) + b"\0" * 6 + struct.pack(">HIIHH", 3, height, width, 8, 3)
+    planes = b"".join(bytes([c]) * (width * height) for c in rgb)
+    path.write_bytes(header + struct.pack(">III", 0, 0, 0) + struct.pack(">H", 0) + planes)
+
+
+def test_psd_shows_its_picture(tmp_path):
+    from photo_manager.core.media import kind
+    from photo_manager.core.thumbs import open_image, thumbnail
+
+    psd = tmp_path / "3x4 - Card.psd"
+    write_psd(psd, 30, 40, (200, 30, 30))
+    assert kind(str(psd)) == "document"
+    im = open_image(str(psd), 20)
+    assert max(im.size) == 20 and im.getpixel((5, 5))[0] > 150
+    assert thumbnail(str(psd), 16) is not None

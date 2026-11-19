@@ -24,8 +24,9 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   Photo Manager's right-click menu has one hook for it: `extra_menu_items`. Tray: `MediaWindow._build_tray`.
 - Changed inside `photo_manager/` for the ✨ edited mark: `metadata.READ_TAGS`/`Meta.edited`/`EDITED_MARK`
   (EXIF ProcessingSoftware) and `grid.paint_flags` (draws ✨ bottom-right).
-  And for .af (Affinity) files: `media.AFFINITY_EXTS`/kind "affinity", `thumbs.affinity_preview` (its "Thmb" PNG);
-  double-click opens it in Windows' app for .af (edit_mode `open_it`).
+  And .af (Affinity) and .psd files: `media.DOCUMENT_EXTS`/kind "document", `thumbs.affinity_preview` (its "Thmb"
+  PNG) / `thumbs.psd_picture`; double-click opens it in its Windows app (edit_mode `open_it`). Group by
+  "Template size" (`grid.size_key`: PL first, SIZE_ORDER, other sizes, no size).
   And Group by "Subfolder" (`grid.scan_media`, GROUPS["folder"]) and each folder's own grouping
   (`settings.folder_groups`, `MainWindow.set_group`/`_show_group`/`open_folder`).
   And the week groups are the user's scrapbook weeks (`grid.album_week`/`album_week_dates`: Week 1 starts Jan 1,

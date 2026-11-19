@@ -47,12 +47,19 @@ def affinity_preview(path: str) -> Image.Image | None:
         return im.convert("RGB")
 
 
+def psd_picture(path: str) -> Image.Image | None:
+    """Media Manager: a Photoshop file's flattened picture (read in one go, so the file isn't held open)."""
+    with Image.open(BytesIO(Path(path).read_bytes())) as im:  # (its frames are layers: no seek)
+        im.load()
+        return im.convert("RGB")
+
+
 def open_image(path: str, max_size: int | None = None) -> Image.Image:
     """Open an image upright (EXIF orientation applied), optionally downscaled."""
-    if kind(path) == "affinity":  # Media Manager: its preview picture
-        im = affinity_preview(path)
+    if kind(path) == "document":  # Media Manager: the picture saved inside it
+        im = affinity_preview(path) if path.lower().endswith(".af") else psd_picture(path)
         if im is None:
-            raise OSError("No preview in this Affinity file")
+            raise OSError("No picture in this file")
         if max_size:
             im.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
         return im

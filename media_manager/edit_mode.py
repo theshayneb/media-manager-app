@@ -145,7 +145,7 @@ class EditMode:
             current = photos.grid.current_path()
             if path:
                 self.enter(path)
-            elif current and kind(current) == "affinity":  # an Affinity document: open it in Affinity
+            elif current and kind(current) == "document":  # an Affinity or Photoshop file: open it there
                 from PySide6.QtCore import QUrl
                 from PySide6.QtGui import QDesktopServices
 

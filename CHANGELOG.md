@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.13
+
+- Photos shows Photoshop files (.psd) with their picture, at any thumbnail size; double-click opens one in its
+  program. (Like .af files, nothing is written to them.)
+- Group by → Template size: the files' names' sizes, as the Photo Templates tab: Layouts (PL) first, then 3x4,
+  6x4, 3x8, 4x4, 6x8, 6x12, any other size, and "No size in the name". Remembered for that folder only.
+
 ## 0.6.12
 
 - Two tabs behind Details instead of five:

@@ -41,7 +41,26 @@ GROUPS = {
     "label": "Label",
     "type": "File type",
     "folder": "Subfolder",  # Media Manager: the open folder's subfolders too, a group each
+    "size": "Template size",  # Media Manager: by the size a file's name starts with ("3x4 - …")
 }
+
+# Media Manager's "Template size" groups (as its Photo Templates tab): the page-protector layouts ("PL …")
+# first, then these sizes, any other size, and the files whose names have none.
+SIZE_ORDER = ["3x4", "6x4", "3x8", "4x4", "6x8", "6x12"]
+LAYOUTS_GROUP, NO_SIZE = "Layouts (PL)", "No size in the name"
+
+
+def size_key(name: str) -> tuple[tuple, str]:
+    stem = os.path.splitext(name)[0].strip()
+    if stem.upper().startswith("PL"):
+        return (0,), LAYOUTS_GROUP
+    m = re.match(r"(\d+)\s*[x×]\s*(\d+)", stem, re.IGNORECASE)
+    if not m:
+        return (3,), NO_SIZE
+    size = f"{m.group(1)}x{m.group(2)}"
+    if size in SIZE_ORDER:
+        return (1, SIZE_ORDER.index(size)), size
+    return (2, int(m.group(1)), int(m.group(2))), size
 
 TOP_FOLDER = "In this folder"  # the "Subfolder" group of the files not in a subfolder
 
@@ -145,6 +164,8 @@ def group_key(item: Item, group_by: str, week_start: str) -> tuple[tuple, str]:
     if group_by == "type":
         label = type_label(item.path)
         return (item.kind == "video", label), label or "Other"
+    if group_by == "size":
+        return size_key(item.name)
     if group_by == "folder":  # its subfolder of the open folder (Week 1, Week 2… in number order)
         sub = item.extra.get("subfolder", "")
         return ((1, *_natural_key(sub)) if sub else (0,)), (sub or TOP_FOLDER)

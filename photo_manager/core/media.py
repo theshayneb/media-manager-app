@@ -14,9 +14,10 @@ VIDEO_EXTS = {
     ".mts", ".m2ts", ".mpg", ".mpeg", ".flv",
 }
 
-# Affinity documents (Media Manager): shown with the preview picture Affinity keeps inside them, opened in
-# Affinity on double-click; nothing is written to them.
+# Media Manager: documents of other programs, shown with the picture saved inside them (Affinity's preview,
+# Photoshop's flattened image), opened in their program on double-click; nothing is written to them.
 AFFINITY_EXTS = {".af"}
+DOCUMENT_EXTS = AFFINITY_EXTS | {".psd"}
 
 # Formats that can carry IPTC keywords (everything else gets XMP only).
 IPTC_EXTS = {".jpg", ".jpeg", ".jpe", ".tif", ".tiff"}
@@ -33,14 +34,14 @@ def ext(path: str | Path) -> str:
 
 
 def kind(path: str | Path) -> str | None:
-    """Return "image", "video", "affinity" or None for files we don't show."""
+    """Return "image", "video", "document" (Media Manager: .af, .psd) or None for files we don't show."""
     e = ext(path)
     if e in IMAGE_EXTS:
         return "image"
     if e in VIDEO_EXTS:
         return "video"
-    if e in AFFINITY_EXTS:
-        return "affinity"
+    if e in DOCUMENT_EXTS:
+        return "document"
     return None
 
 

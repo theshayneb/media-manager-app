@@ -21,7 +21,8 @@ def fake_af(path, colour=(200, 40, 40)):
 def test_af_thumbnail(tmp_path):
     af = tmp_path / "8.5x11 - Borderless - Photos.af"
     fake_af(af)
-    assert kind(str(af)) == "affinity" and kind("x.afphoto") is None  # only .af
+    assert kind(str(af)) == "document" and kind("x.afphoto") is None  # only .af (and .psd)
+    assert kind("3x4 - Card.psd") == "document"
     im = thumbnail(str(af), 256)
     assert im.size == (256, 198) and im.getpixel((10, 10))[0] > 150
     (tmp_path / "broken.af").write_bytes(b"no preview here")
