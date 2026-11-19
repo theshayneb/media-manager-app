@@ -1,3 +1,4 @@
+import os
 from datetime import date
 from pathlib import Path
 
@@ -393,5 +394,5 @@ def test_open_sends_every_selected_file(tmp_path, monkeypatch):
     action = next(a for a in photos.findChildren(QAction) if a.text() == "Open" and a.shortcuts())
     assert [s.toString() for s in action.shortcuts()] == ["Ctrl+O", "Shift+X"]
     action.trigger()
-    assert sorted(opened) == [str(pics / "0.jpg"), str(pics / "2.jpg")]
+    assert sorted(os.path.normpath(p) for p in opened) == [str(pics / "0.jpg"), str(pics / "2.jpg")]
     win.close()
