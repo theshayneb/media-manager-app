@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.8
+
+- Weeks are your scrapbook's weeks everywhere (Group by Week taken, Print size, Layouts): each year's Week 1
+  starts on January 1, and a short first week is part of Week 1 (2026: Jan 1–10, 2027: Jan 1–9); the last
+  week ends on December 31. Today is Week 46.
+- Print size: Week ▾. The print copy gets a date taken in that week, so cards without a date go in their week
+  too. A photo starts with its own week, a card with the week you chose last. A photo printed for another week
+  is moved into it by whole weeks (the original isn't touched).
+- Layouts: the week's spread. Double-click a layout (or right-click → Use for the right page) to put it on
+  this week's right page; the back of that sheet is next week's left page, shown 🔒 and mirrored. "Fits" is
+  for the whole spread, and the panel says what next week's locked page will need, so you can crop ahead.
+  Week 1 starts the album: both its pages are yours to choose. The plan is saved in Project Life as
+  "Layout plan.json".
+
 ## 0.6.7
 
 - Photos: Group by → Subfolder. The open folder's subfolders (Week 1, Week 2… in number order) each become a

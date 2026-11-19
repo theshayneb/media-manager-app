@@ -155,13 +155,38 @@ def group_key(item: Item, group_by: str, week_start: str) -> tuple[tuple, str]:
         return ((0, dt.year, dt.month, dt.day), f"{dt:%A, %B} {dt.day}, {dt.year}")
     if group_by == "month":
         return ((0, dt.year, dt.month), f"{dt:%B %Y}")
-    # week
-    offset = (dt.weekday() + 1) % 7 if week_start == "sunday" else dt.weekday()
-    start = (dt - timedelta(days=offset)).date()
-    end = start + timedelta(days=6)
-    year, number = week_number(start, week_start)
+    # week: the user's scrapbook weeks (album_week)
+    year, number, start, end = album_week(dt.date(), week_start)
     title = (f"Week {number}  ·  {start:%a, %b} {start.day}  –  {end:%a, %b} {end.day}, {end.year}")
     return ((0, start.toordinal()), title)
+
+
+def album_week(day: date, week_start: str = "sunday") -> tuple[int, int, date, date]:
+    """Media Manager: (year, week number, first day, last day) as the user's scrapbook counts weeks. Each year
+    starts its own Week 1 on January 1; a first week shorter than 4 days is part of Week 1 with the next full
+    week (2026: Thu Jan 1 – Sat Jan 10; 2027: Fri Jan 1 – Sat Jan 9); the last week ends on December 31."""
+    year = day.year
+    jan1 = date(year, 1, 1)
+    offset = (jan1.weekday() + 1) % 7 if week_start == "sunday" else jan1.weekday()
+    short = (7 - offset) % 7  # days before the first full week
+    first_end = jan1 + timedelta(days=(short + 6) if 0 < short < 4 else (short - 1) if short else 6)
+    dec31 = date(year, 12, 31)
+    if day <= first_end:
+        return year, 1, jan1, min(first_end, dec31)
+    n = (day - first_end).days - 1
+    start = first_end + timedelta(days=1 + n // 7 * 7)
+    return year, 2 + n // 7, start, min(start + timedelta(days=6), dec31)
+
+
+def album_week_dates(year: int, number: int, week_start: str = "sunday") -> tuple[date, date] | None:
+    """The first and last day of the year's Week number (None if the year has no such week)."""
+    first = album_week(date(year, 1, 1), week_start)
+    if number == 1:
+        return first[2], first[3]
+    start = first[3] + timedelta(days=1 + 7 * (number - 2))
+    if start.year != year:
+        return None
+    return start, min(start + timedelta(days=6), date(year, 12, 31))
 
 
 def week_number(week_start_day: date, week_start: str) -> tuple[int, int]:

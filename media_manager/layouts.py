@@ -179,12 +179,12 @@ def group_prints(paths: list[str], title: str) -> Week:
     return week
 
 
-def week_prints(folder: str, start: date) -> Week:
-    """The print copies in folder taken in the week starting start: how many tall, wide and square."""
+def week_prints(folder: str, start: date, last: date | None = None) -> Week:
+    """The print copies in folder taken from start to last (a scrapbook week): how many tall, wide, square."""
     week = Week(start)
     if not folder or not os.path.isdir(folder):
         return week
-    end, names = start + timedelta(days=7), []
+    end, names = (last or start + timedelta(days=6)) + timedelta(days=1), []
     for entry in Path(folder).iterdir():
         if not entry.is_file() or entry.suffix.lower() not in PICTURES:
             continue
@@ -203,14 +203,82 @@ def week_prints(folder: str, start: date) -> Week:
     return week
 
 
-def fit(layout: Layout, week: Week) -> tuple[bool, str]:
-    """(fits, what to say): the week's prints against the layout's pockets."""
-    short = []
-    for shape in ("tall", "wide", "square"):
-        need = layout.count(shape) - getattr(week, shape)
-        if need > 0:
-            short.append(f"{need} more {shape}")
+SHAPES = ("tall", "wide", "square")
+
+
+def needs(pages: list[Layout]) -> dict[str, int]:
+    """How many tall, wide and square pockets the pages have together."""
+    return {shape: sum(page.count(shape) for page in pages) for shape in SHAPES}
+
+
+def describe(need: dict[str, int]) -> str:
+    return ", ".join(f"{n} {shape}" for shape, n in need.items() if n) or "nothing"
+
+
+def fit(layout: Layout | list[Layout], week: Week) -> tuple[bool, str]:
+    """(fits, what to say): the week's pictures against the pockets of a layout (or a spread of them)."""
+    pages = layout if isinstance(layout, list) else [layout]
+    need = needs(pages)
+    short = [f"{need[s] - getattr(week, s)} more {s}" for s in SHAPES if need[s] > getattr(week, s)]
     if short:
         return False, "✗ needs " + ", ".join(short)
-    spare = (week.tall + week.wide + week.square) - len(layout.pockets)
+    spare = (week.tall + week.wide + week.square) - sum(need.values())
     return True, "✓ fits" + (" this week" if week.start else "") + (f" ({spare} left over)" if spare else "")
+
+
+# ------------------------------------------------------------------ the page plan
+PLAN_FILE = "Layout plan.json"
+
+
+class Plan:
+    """Which layout is on which page, saved in the Project Life folder ("Layout plan.json").
+
+    Each week is a spread. You choose its right page; the back of that sheet (the same layout, mirrored) is the
+    next week's left page, so that one is fixed ("locked"). Week 1 starts the year's album: both its pages are
+    yours to choose (as is a left page whose previous week has no right page yet)."""
+
+    def __init__(self, folder: str):
+        self.path = Path(folder) / PLAN_FILE if folder else None
+        self.weeks: dict[str, dict[str, str]] = {}
+        try:
+            import json
+
+            data = json.loads(self.path.read_text(encoding="utf-8")) if self.path else {}
+            self.weeks = {k: dict(v) for k, v in data.get("weeks", {}).items() if isinstance(v, dict)}
+        except (OSError, ValueError, AttributeError):
+            self.weeks = {}
+
+    @staticmethod
+    def key(year: int, number: int) -> str:
+        return f"{year}-{number:02d}"
+
+    def right(self, year: int, number: int) -> str | None:
+        return self.weeks.get(self.key(year, number), {}).get("right")
+
+    def left(self, year: int, number: int) -> tuple[str | None, bool]:
+        """(layout name, locked): the back of last week's right page, else the one chosen for this week."""
+        if number > 1:
+            back = self.right(year, number - 1)
+            if back:
+                return back, True
+        return self.weeks.get(self.key(year, number), {}).get("left"), False
+
+    def choose(self, year: int, number: int, side: str, name: str | None) -> None:
+        week = self.weeks.setdefault(self.key(year, number), {})
+        if name:
+            week[side] = name
+        else:
+            week.pop(side, None)
+        if not week:
+            self.weeks.pop(self.key(year, number), None)
+        self.save()
+
+    def save(self) -> None:
+        import json
+
+        if self.path is None:
+            raise OSError("No Project Life folder")
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        tmp.write_text(json.dumps({"weeks": dict(sorted(self.weeks.items()))}, indent=2, ensure_ascii=False),
+                       encoding="utf-8")
+        os.replace(tmp, self.path)

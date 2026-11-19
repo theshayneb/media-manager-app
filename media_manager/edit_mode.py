@@ -29,6 +29,7 @@ class EditMode:
         self.view.navigate.connect(self.go)
         self.view.crop_requested.connect(self._crop)
         self.view.print_requested.connect(self._print)
+        self.view.fill_weeks = self._fill_weeks
         self.view.crop_settings = self.photos.settings
         self.photos.edit_mode = self
         self._replace_big_preview()
@@ -172,7 +173,45 @@ class EditMode:
         if not as_copy:
             self.photos.bg.run(lambda: None, lambda _r, _e: self.view.reload_image() if self.active else None)
 
-    def _print(self, path: str, box: tuple, size: str, border: bool) -> None:
+    def _taken(self, path: str):  # type: ignore[no-untyped-def]
+        item = self.photos.model.item(path)
+        return item.meta.date_taken if item is not None and item.meta is not None else None
+
+    def _fill_weeks(self, path: str) -> None:
+        """Print size's Week list: the photo's own week chosen (a card without a date: the week chosen last)."""
+        from datetime import date, timedelta
+
+        from photo_manager.ui.grid import album_week, album_week_dates
+
+        week_start = getattr(self.photos.settings, "week_start", "sunday")
+        taken, last = self._taken(path), self.shell.media.last_print_week
+        ref = taken.date() if taken else date.today()
+        if not taken and last:
+            try:
+                year, number = (int(x) for x in last.split("-"))
+                ref = (album_week_dates(year, number, week_start) or (ref, ref))[0]
+            except ValueError:
+                pass
+        start = album_week(ref, week_start)[2]
+        combo = self.view.print_week
+        combo.blockSignals(True)
+        combo.clear()
+        seen = set()
+        for k in range(-10, 11):
+            year, number, first, end = album_week(start + timedelta(days=7 * k), week_start)
+            if (year, number) in seen:
+                continue
+            seen.add((year, number))
+            label = f"Week {number} · {first:%b} {first.day}–" + (f"{end:%b} " if end.month != first.month else "") \
+                + f"{end.day}" + (f", {year}" if year != date.today().year else "")
+            if taken and first <= taken.date() <= end:
+                label += "  (the photo's week)"
+            combo.addItem(label, f"{year}-{number}")
+            if first <= ref <= end:
+                combo.setCurrentIndex(combo.count() - 1)
+        combo.blockSignals(False)
+
+    def _print(self, path: str, box: tuple, size: str, border: bool, week: str = "") -> None:
         """Print size: the print copy (sliders and flip/rotate included) into the Project Life folder."""
         from PySide6.QtWidgets import QFileDialog
 
@@ -185,6 +224,15 @@ class EditMode:
                 return
             media.print_folder = folder
         adjustments, turn, folder, et = self.view.adjustments(), self.view.turn, media.print_folder, self.photos.et
+        taken = self._taken(path)
+        if week:  # its date taken in the scrapbook week chosen
+            from photo_manager.ui.grid import album_week_dates
+
+            year, number = (int(x) for x in week.split("-"))
+            days = album_week_dates(year, number, getattr(self.photos.settings, "week_start", "sunday"))
+            if days:
+                taken = print_size.week_date(taken, *days, getattr(self.photos.settings, "week_start", "sunday"))
+                media.last_print_week = week
         self.photos.status.setText("Saving the print copy…")
 
         def done(dest, error) -> None:  # type: ignore[no-untyped-def]
@@ -198,7 +246,7 @@ class EditMode:
                 layouts.refresh(force=True)
 
         self.photos.bg.run(lambda: print_size.save_print(path, adjustments, turn, box, print_size.BY_NAME[size],
-                                                         border, folder, et), done)
+                                                         border, folder, et, taken), done)
 
     # ---------------------------------------------------------------- saving and moving on
     def _save(self) -> None:

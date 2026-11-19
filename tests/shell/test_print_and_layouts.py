@@ -115,7 +115,7 @@ def test_print_size_in_the_edit_view(tmp_path):
     assert abs(box.width() / box.height() - 3520 / 2340) < 0.01
     assert "3520 × 2340 px" in view.print_info.text()
     view.apply_print()
-    assert asked and asked[0][2:] == ("6x4", False) and not view.printing
+    assert asked and asked[0][2:] == ("6x4", False, "") and not view.printing
 
 
 def test_layouts_stays_behind_details_wherever_it_is(tmp_path):
@@ -189,4 +189,147 @@ def test_in_the_project_life_folder_the_selected_group_counts(tmp_path):
     photos.grid.select_paths([wide], current=wide)
     panel.refresh(force=True)
     assert _wait(lambda: panel.week.title == "Week 2" and panel.week.wide == 1)
+    win.close()
+
+
+def test_print_copy_goes_in_the_chosen_scrapbook_week(tmp_path):
+    from datetime import datetime
+
+    from photo_manager.ui.grid import album_week_dates
+
+    week46 = album_week_dates(2026, 46)  # Sun Nov 15 - Sat Nov 21
+    taken = datetime(2026, 11, 17, 9, 30)
+    assert print_size.week_date(taken, *week46) == taken  # its own week: unchanged
+    assert print_size.week_date(datetime(2026, 11, 10, 9, 30), *week46) == datetime(2026, 11, 17, 9, 30)  # +1 wk
+    assert print_size.week_date(None, *week46) == datetime(2026, 11, 15, 12, 0)  # a card: noon, first day
+    week1 = album_week_dates(2027, 1)  # Fri Jan 1 - Sat Jan 9
+    assert print_size.week_date(datetime(2026, 12, 29, 8, 0), *week1) == datetime(2027, 1, 3, 8, 0)  # in Week 1
+    # Without ExifTool too, the copy has the date (so the week groups find it).
+    card = tmp_path / "card.png"
+    Image.new("RGB", (300, 400), "white").save(card)
+    out = print_size.save_print(str(card), Adjustments(), Turn(), (0, 0, 300, 394), print_size.BY_NAME["3x4"],
+                                False, str(tmp_path / "pl"), None, print_size.week_date(None, *week46))
+    assert layouts.date_taken(out) == datetime(2026, 11, 15, 12, 0)
+    if find_exiftool():
+        with ExifTool(find_exiftool()) as et:
+            out = print_size.save_print(str(card), Adjustments(), Turn(), (0, 0, 300, 394),
+                                        print_size.BY_NAME["3x4"], False, str(tmp_path / "pl"), et,
+                                        datetime(2026, 11, 18, 12, 0))
+        assert layouts.date_taken(out) == datetime(2026, 11, 18, 12, 0)
+
+
+def test_print_size_week_list(tmp_path):
+    from datetime import date
+
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    pics = tmp_path / "pics"
+    pics.mkdir()
+    Image.new("RGB", (300, 400), "white").save(pics / "card.png")
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.5)
+    win.show_kind("photos")
+    win.photos.open_folder(str(pics))
+    card = str(pics / "card.png")
+    win.media.last_print_week = "2026-40"
+    win.media.print_folder = str(tmp_path / "Project Life")  # (missing, it would ask where)
+    (tmp_path / "Project Life").mkdir()
+    win.edit.enter(card)
+    win.edit.view.start_print()
+    combo = win.edit.view.print_week
+    assert combo.currentData() == "2026-40"  # a card: the week chosen last
+    assert combo.count() >= 20 and combo.currentText().startswith("Week 40 · ")
+    asked = []
+    win.edit.view.print_requested.connect(lambda *a: asked.append(a))
+    combo.setCurrentIndex(combo.currentIndex() + 1)
+    win.edit.view.apply_print()
+    assert asked[0][4] == "2026-41"
+    win.photos.bg.wait(10000)
+    _wait(lambda: False, 0.3)
+    [out] = list((tmp_path / "Project Life").glob("*.jpg"))
+    assert out.name == "card - 3x4 Border.jpg"
+    assert layouts.date_taken(str(out)).date() == date(2026, 10, 11)  # Week 41: Sun Oct 11, noon
+    assert win.media.last_print_week == "2026-41"
+    win.close()
+
+
+def test_the_page_plan(tmp_path):
+    plan = layouts.Plan(str(tmp_path))
+    assert plan.left(2026, 1) == (None, False)
+    plan.choose(2026, 1, "left", "Two 6x4")         # Week 1 starts the album: its left page is free
+    plan.choose(2026, 46, "right", "Four 3x4")
+    again = layouts.Plan(str(tmp_path))              # saved in the Project Life folder
+    assert (tmp_path / "Layout plan.json").exists()
+    assert again.left(2026, 1) == ("Two 6x4", False)
+    assert again.left(2026, 47) == ("Four 3x4", True)  # the back of Week 46's right page: locked
+    assert again.left(2027, 1) == (None, False)
+    again.choose(2026, 46, "right", None)
+    assert layouts.Plan(str(tmp_path)).left(2026, 47) == (None, False)
+
+
+def test_spread_in_the_layouts_panel(tmp_path):
+    from datetime import datetime
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    pl = tmp_path / "Project Life"
+    pl.mkdir()
+
+    def card(name, size, when):
+        im = Image.new("RGB", size, "white")
+        exif = im.getexif()
+        exif.get_ifd(0x8769)[0x9003] = when.strftime("%Y:%m:%d %H:%M:%S")
+        im.save(pl / name, exif=exif)
+
+    for n in range(4):
+        card(f"w46-{n}.jpg", (30, 40), datetime(2026, 11, 16, 10))   # Week 46: 4 tall
+    for n in range(6):
+        card(f"w47-{n}.jpg", (30, 40), datetime(2026, 11, 23, 10))   # Week 47: 6 tall
+    card("w47-wide.jpg", (60, 40), datetime(2026, 11, 24, 10))
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.5)
+    win.media.print_folder = str(pl)
+    win.show_kind("photos")
+    photos, panel = win.photos, win.layouts
+    photos.open_folder(str(pl))
+    photos.set_group("week")
+    assert _wait(lambda: all(i.meta is not None for i in photos.model.items), 10)
+    photos.set_group("week")
+
+    def select(name):
+        path = str(pl / name)
+        photos.grid.select_paths([path], current=path)
+        panel.refresh(force=True)
+        _wait(lambda: not panel._busy and panel.week is not None and panel.week.names
+              and name in panel.week.names, 5)
+
+    select("w46-0.jpg")
+    assert panel.album[1] == 46 and "Week 46" in panel.heading.text()
+    four = next(i for i in range(panel.list.count())
+                if panel.list.item(i).data(Qt.ItemDataRole.UserRole) == "Four 3x4")
+    panel.list.itemDoubleClicked.emit(panel.list.item(four))       # this week's right page
+    assert layouts.Plan(str(pl)).right(2026, 46) == "Four 3x4"
+    assert "Four 3x4" in panel.right_text.text() and "Week 47's left page will be Four 3x4" in panel.next_page.text()
+
+    select("w47-0.jpg")
+    assert panel.album[1] == 47
+    assert "🔒 Four 3x4" in panel.left_text.text() and not panel.left_clear.isVisible()
+    assert "✓ fits" in panel.spread_verdict.text()        # left page alone: 4 tall of the 6 tall + 1 wide
+    texts = {panel.list.item(i).data(Qt.ItemDataRole.UserRole): panel.list.item(i).text()
+             for i in range(panel.list.count())}
+    assert "with the left page: ✗ needs 2 more tall" in texts["Four 3x4"]   # 8 tall needed, 6 there
+    assert "with the left page: ✓ fits" in texts["Two 3x4 and a 6x4"]      # 6 tall + 1 wide
     win.close()

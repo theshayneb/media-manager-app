@@ -201,7 +201,7 @@ class EditView(QWidget):
     finished = Signal(str)   # "save" or "cancel"
     navigate = Signal(int)   # ← / →: the previous / next photo
     crop_requested = Signal(str, tuple, bool)  # path, box (upright pixels of the full photo), as a copy
-    print_requested = Signal(str, tuple, str, bool)  # path, box (on the photo as shown, full size), size, border
+    print_requested = Signal(str, tuple, str, bool, str)  # path, box (as shown, full size), size, border, week
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -360,8 +360,16 @@ class EditView(QWidget):
         self.print_border.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.print_info = QLabel("")
         self.print_info.setStyleSheet("color: palette(placeholder-text);")
-        for w in (QLabel("Size:"), self.print_size, self.print_border, self.print_info):
+        self.print_week = QComboBox()  # the scrapbook week it's for ("2026-46"); edit_mode fills it
+        self.print_week.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.print_week.setMinimumContentsLength(34)  # "Week 46 · Nov 15–21  (the photo's week)"
+        self.print_week.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.print_week.setToolTip("The week of the scrapbook this print is for: the print copy gets a date taken "
+                                   "in that week (cards without a date too)")
+        for w in (QLabel("Size:"), self.print_size, self.print_border, QLabel("  Week:"), self.print_week,
+                  self.print_info):
             pbar.addWidget(w)
+        self.fill_weeks = None  # edit_mode: fills print_week for this photo
         pbar.addStretch(1)
         save_print = QPushButton("Save print copy (Enter)")
         save_print.clicked.connect(self.apply_print)
@@ -625,6 +633,8 @@ class EditView(QWidget):
             return
         self.start_crop()
         self.crop_bar.setVisible(False)
+        if self.fill_weeks is not None:
+            self.fill_weeks(self.path)
         self.print_bar.setVisible(True)
         self.printing = True
         self._print_shape()
@@ -634,8 +644,9 @@ class EditView(QWidget):
             return
         box = self.cropper.crop_box()  # on the photo as shown (edits, flip/rotate), full-size pixels
         size, border = self.chosen_print().name, self.print_border.isChecked()
+        week = self.print_week.currentData() or ""
         self.cancel_crop()
-        self.print_requested.emit(self.path, box, size, border)
+        self.print_requested.emit(self.path, box, size, border, week)
 
     def cancel_crop(self) -> None:
         self.printing = False

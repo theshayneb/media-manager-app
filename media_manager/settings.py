@@ -31,6 +31,7 @@ class MediaSettings:
     # The scrapbook: where Print size saves its copies, and the page layouts (pictures of pockets).
     print_folder: str = r"C:\Users\talkt\Documents\Dashboard\Hobbies\Digital Craft Supplies\Project Life"
     layouts_folder: str = r"C:\Users\talkt\Documents\Dashboard\Hobbies\Digital Craft Supplies\Digital Templates"
+    last_print_week: str = ""   # Print size's Week chosen last ("2026-46"): where a card without a date goes
     minimize_to_tray: bool = True  # the minimize button hides the window to the tray
     last_edit: dict = field(default_factory=dict)  # the sliders of the last photo saved ("Same as last edit")
     window_geometry: str = ""

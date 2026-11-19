@@ -2,7 +2,7 @@
 
 import os
 import time
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 from PIL import Image
@@ -188,8 +188,9 @@ def test_group_by_week_respects_week_start(window):
         "vacation.jpg": datetime(2026, 10, 26, 12),
     })
     win.set_group("week")
-    assert headers(win) == ["Week 43  ·  Sun, Oct 18  –  Sat, Oct 24, 2026",
-                            "Week 44  ·  Sun, Oct 25  –  Sat, Oct 31, 2026"]
+    # Media Manager: the user's scrapbook week numbers (2026's Week 1 is Jan 1-10).
+    assert headers(win) == ["Week 42  ·  Sun, Oct 18  –  Sat, Oct 24, 2026",
+                            "Week 43  ·  Sun, Oct 25  –  Sat, Oct 31, 2026"]
     win.set_week_start("monday")
     assert headers(win) == ["Week 43  ·  Mon, Oct 19  –  Sun, Oct 25, 2026",
                             "Week 44  ·  Mon, Oct 26  –  Sun, Nov 1, 2026"]
@@ -1479,3 +1480,15 @@ def test_import_videos_end_to_end(window, tmp_path, monkeypatch):
     while again.scanning:
         QApplication.processEvents()
     assert again.plan == [] and "3 imported before" in again.summary.text()
+
+
+def test_album_weeks():
+    from photo_manager.ui.grid import album_week, album_week_dates
+
+    assert album_week(date(2026, 1, 1))[1:] == (1, date(2026, 1, 1), date(2026, 1, 10))  # the user's Week 1
+    assert album_week(date(2026, 11, 19))[1:] == (46, date(2026, 11, 15), date(2026, 11, 21))
+    assert album_week(date(2026, 12, 31))[1:] == (52, date(2026, 12, 27), date(2026, 12, 31))
+    assert album_week(date(2027, 1, 9))[1:] == (1, date(2027, 1, 1), date(2027, 1, 9))
+    assert album_week(date(2023, 1, 1))[1:] == (1, date(2023, 1, 1), date(2023, 1, 7))  # a Sunday: a full week
+    assert album_week_dates(2026, 46) == (date(2026, 11, 15), date(2026, 11, 21))
+    assert album_week_dates(2026, 53) is None
