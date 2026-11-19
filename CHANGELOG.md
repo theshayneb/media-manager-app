@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.15
+
+- Fixed: closing 0.6.14 showed "AttributeError: 'NoneType' object has no attribute 'flush'" (and could leave it
+  running). The installed app has no console window to flush.
+
 ## 0.6.14
 
 - Fixed: after closing, Media Manager could stay running with its title bar frozen on the screen. It waited for

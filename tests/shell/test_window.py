@@ -780,3 +780,36 @@ def test_folders_in_your_order_and_the_drop_folder_lights_up(tmp_path):
     lst._light(None)
     assert item.background().style() == Qt.BrushStyle.NoBrush
     win.close()
+
+
+def test_the_app_ends_without_a_console(monkeypatch):
+    """0.6.14: the installed app has no console (sys.stdout is None): ending it showed an error."""
+    import sys
+
+    from media_manager import app as app_module
+
+    ended = []
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    monkeypatch.setattr(app_module.os, "_exit", lambda code: ended.append(code))
+
+    class FakeApp:
+        def __init__(self, *_a):
+            pass
+
+        def exec(self):
+            return 0
+
+        def __getattr__(self, _name):
+            return lambda *a, **k: None
+
+    class FakeWindow:
+        def __getattr__(self, _name):
+            return lambda *a, **k: None
+
+    monkeypatch.setattr(app_module, "QApplication", FakeApp)
+    monkeypatch.setattr(app_module, "build_window", lambda: FakeWindow())
+    monkeypatch.setattr(app_module, "install_error_handler", lambda: None)
+    monkeypatch.setattr(app_module, "ICON", app_module.Path("no-icon-here.png"))
+    app_module.main(["MediaManager"])
+    assert ended == [0]

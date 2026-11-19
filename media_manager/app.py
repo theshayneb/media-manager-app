@@ -144,6 +144,10 @@ def main(argv: list[str] | None = None) -> int:
     # Everything that writes was finished and saved when the window closed (each part's closeEvent); any
     # reading still going on in the background (a slow network or OneDrive file) mustn't keep the program
     # running, with its window frozen on the screen, so it ends here.
-    sys.stdout.flush()
-    sys.stderr.flush()
+    for stream in (sys.stdout, sys.stderr):  # (None in the installed app: it has no console)
+        if stream is not None:
+            try:
+                stream.flush()
+            except (OSError, ValueError):
+                pass
     os._exit(code)
