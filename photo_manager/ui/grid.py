@@ -538,8 +538,11 @@ def paint_flags(painter: QPainter, target: QRect, meta: Meta | None, scale: floa
     s = scale
     size = 18 * s
     pad = 3 * s
-    if getattr(meta, "edited", False):
-        circle = QRectF(target.right() - 4 * s - size - 2 * pad, target.bottom() - 4 * s - size - 2 * pad,
+    # Bottom-right, right to left: ✨ (edited), 🖨 (printed from Media Manager's Print sheet).
+    marks = (["✨"] if getattr(meta, "edited", False) else []) + (["🖨"] if getattr(meta, "printed", False) else [])
+    for n, mark in enumerate(marks):
+        step = n * (size + 2 * pad + 3 * s)
+        circle = QRectF(target.right() - 4 * s - size - 2 * pad - step, target.bottom() - 4 * s - size - 2 * pad,
                         size + 2 * pad, size + 2 * pad)
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -548,7 +551,7 @@ def paint_flags(painter: QPainter, target: QRect, meta: Meta | None, scale: floa
         painter.drawEllipse(circle)
         painter.setFont(emoji_font(round(size * 0.8)))
         painter.setPen(QColor("white"))
-        painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, "✨")
+        painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, mark)
         painter.restore()
     if not (meta.starred or meta.bookmarked):
         return

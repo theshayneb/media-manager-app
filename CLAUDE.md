@@ -44,6 +44,10 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   name's size (`size_group`, GROUP_ORDER; `psd_layers`/`psd_spots`: a PSD's layers named "photo" are its photo
   spots; `TemplatesPanel`). Both tabs behind Details (`MediaWindow._behind_details`), refilled by a
   QFileSystemWatcher on settings.layouts_folder.
+  `print_sheet.py` (no Qt: guillotine/row packing on 8.5 × 11 at 600 DPI, centred, never resized; crop marks;
+  per-photo brightness; render/save) + `print_sheet_window.py` (Photos' 🖨 Print sheet, Shift+S; prints via
+  QPrinter full page; marks print copies with XMP-photoshop:Instructions = metadata.PRINTED_MARK → Meta.printed,
+  the 🖨 drawn by grid.paint_flags next to ✨).
   Not built yet, on purpose: the half-width insert,
   dragging photos into pockets, and a pocket starting Print size with its size.
 - `zoom.py`: mouse-wheel zoom/pan, used by the Edit window and patched into Photo Manager's preview CropCanvas.

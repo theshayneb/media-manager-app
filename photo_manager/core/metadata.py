@@ -27,10 +27,13 @@ READ_TAGS = [
     "-Composite:ImageSize",
     "-EXIF:ProcessingSoftware",  # Media Manager: "Media Manager edit" on photos saved from its Edit window
     "-XMP-photoshop:History",    # … and from the Android companion app (it can't write that EXIF tag)
+    "-XMP-photoshop:Instructions",  # Media Manager: "Printed by Media Manager …" (a 🖨 in the corner)
 ]
 
 # Written into photos saved from Media Manager's Edit window (they get a ✨ in the corner).
 EDITED_MARK = "Media Manager edit"
+# Written into print copies printed from Media Manager's Print sheet (they get a 🖨 in the corner).
+PRINTED_MARK = "Printed by Media Manager"
 
 # Where "date taken" comes from, best source first.
 _DATE_SOURCES = [
@@ -61,6 +64,7 @@ class Meta:
     duration: float | None = None  # videos: length in seconds
     image_size: str = ""
     edited: bool = False  # saved from Media Manager's Edit window (EXIF ProcessingSoftware)
+    printed: bool = False  # printed from Media Manager's Print sheet (XMP-photoshop:Instructions)
 
     @property
     def starred(self) -> bool:
@@ -149,6 +153,7 @@ def parse_meta(data: dict) -> Meta:
     meta.image_size = str(data.get("Composite:ImageSize") or "").replace(" ", "x")
     meta.edited = any(str(data.get(key) or "").startswith(EDITED_MARK)
                       for key in ("EXIF:ProcessingSoftware", "XMP:History"))
+    meta.printed = str(data.get("XMP:Instructions") or "").startswith(PRINTED_MARK)
     return meta
 
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0
+
+- Photos: 🖨 Print sheet (Shift+S, also right-click). The selected print copies laid out on 8.5 × 11 paper to
+  waste as little as possible (as few sheets as it can, portrait or landscape, photos turned sideways when that
+  fits more on; upright when it fits just as well), touching edge to edge, cuttable in straight passes, and
+  centred on the paper at their real size (never resized; 1/8 in kept clear at the edges).
+  - Light grey crop marks in the white round the photos (never on one).
+  - ☀ Brighter per photo, each its own amount (21% to start, your Affinity brightness layer), on the sheet only.
+  - Turn selected, Auto-arrange, and drag a photo onto another the same size to swap them.
+  - Print… prints straight from Media Manager; Save sheets writes "Week 46 - Sheet 1.jpg" (600 DPI) in
+    Project Life (the Layouts panel doesn't count saved sheets as print copies).
+  - Printed print copies get a 🖨 in a dark circle, bottom-right (next to ✨).
+
 ## 0.6.15
 
 - Fixed: closing 0.6.14 showed "AttributeError: 'NoneType' object has no attribute 'flush'" (and could leave it

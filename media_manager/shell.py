@@ -259,7 +259,9 @@ class MediaWindow(QMainWindow):
         self.layouts_dock = self._dock("Layouts", "media-layouts", self.layouts)  # the page protectors
         # Photo Templates: the cards that go inside a pocket, grouped by size (one tab).
         from .layouts_panel import TemplatesPanel
+        from .print_sheet_window import open_print_sheet
 
+        self.photos.open_print_sheet = lambda: open_print_sheet(self.photos, media)  # 🖨 Print sheet (Shift+S)
         self.templates = TemplatesPanel(media)
         self.templates.cache_dir = getattr(self.photos.model, "cache_dir", None)  # thumbnails kept on disk
         self.templates_dock = self._dock("Photo Templates", "media-photo-templates", self.templates)

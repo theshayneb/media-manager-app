@@ -331,6 +331,9 @@ def shape_of(path: str) -> str | None:
 
 def group_prints(paths: list[str], title: str) -> Week:
     """A group of the Photos grid (a week, a subfolder, "No date taken"…): dated or not, every picture counts."""
+    from .print_sheet import is_sheet
+
+    paths = [p for p in paths if not is_sheet(p)]  # (a saved Print sheet isn't a print copy)
     week = Week(None, title=title)
     for path in paths:
         shape = shape_of(path)
@@ -348,6 +351,10 @@ def week_prints(folder: str, start: date, last: date | None = None) -> Week:
     end, names = (last or start + timedelta(days=6)) + timedelta(days=1), []
     for entry in Path(folder).iterdir():
         if not entry.is_file() or entry.suffix.lower() not in PICTURES:
+            continue
+        from .print_sheet import is_sheet
+
+        if is_sheet(str(entry)):  # a saved Print sheet isn't a print copy
             continue
         taken = date_taken(str(entry))
         if taken is None:
