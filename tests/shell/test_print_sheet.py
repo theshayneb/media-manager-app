@@ -250,7 +250,8 @@ def test_print_sheet_opens_with_nothing_selected(tmp_path):
     win.show()
     _wait(lambda: False, 0.3)
     sheet = PrintSheetWindow(win.photos, win.media, [])
-    assert not sheet.sheets and not sheet.print_btn.isEnabled() and sheet.check_btn.isEnabled()
+    assert not sheet.sheets and not sheet.print_btn.isEnabled()
+    assert not sheet.check_btn.isEnabled()  # (nothing picked yet: greys and browns are picked like any colour)
     assert "Colour check" in sheet.note.text()
     printer = QPrinter(QPrinter.PrinterMode.HighResolution)
     printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
@@ -308,16 +309,11 @@ def test_colour_check_has_rows_for_picked_colours(tmp_path):
     pick = print_sheet.Pick((154, 82, 207), "Purple", "p.jpg", str(photo), 0.5, 0.5)
     page = print_sheet.colour_check([str(photo)], [pick, print_sheet.Pick((239, 203, 48), "Yellow")])
     assert page.size == (6600, 5100)
-    # Six rows (greys, browns, purple shade/strength, yellow shade/strength): the purple rows differ by column.
-    row_y = []
-    y = 560
-    side = min((6600 - 250 - 1100 - 250) // 7 - 60, (5100 - 560 - 420 - 40 * 5) // 6)
-    for _ in range(6):
-        row_y.append(y + side // 2)
-        y += side + 40
+    # Four rows (purple shade/strength, yellow shade/strength): the purple shade row differs by column.
+    side = min((6600 - 250 - 1100 - 250) // 7 - 60, (5100 - 560 - 420 - 40 * 3) // 4)
     x0, column = 250 + 1100, (6600 - 250 - 1100 - 250) // 7
-    a = page.getpixel((x0 + side // 2, row_y[2]))
-    g = page.getpixel((x0 + 6 * column + side // 2, row_y[2]))
+    a = page.getpixel((x0 + side // 2, 560 + side // 2))
+    g = page.getpixel((x0 + 6 * column + side // 2, 560 + side // 2))
     assert a != g and g[0] > a[0]  # G: more pink
 
 
@@ -349,5 +345,62 @@ def test_eyedropper_in_the_print_sheet(tmp_path):
     assert win.media.check_colours[0]["shade"] == "F"
     sheet._remove_pick(sheet.picks[0])
     assert win.media.check_colours == []
+    sheet.close()
+    win.close()
+
+
+
+def test_week_labels_beside_the_photos(tmp_path):
+    ps = pieces("3x4", "3x4", "3x4", "3x4")
+    for n, p in enumerate(ps):
+        p.week = f"Week {46 + n // 2}"
+    [sheet, *_], _ = arrange(ps)
+    labels = print_sheet.week_labels(sheet)
+    assert len(labels) == 4 and {t for t, *_ in labels} == {"Week 46", "Week 47"}
+    left = min(p.x for p in sheet.placed)
+    top = min(p.y for p in sheet.placed)
+    right = max(p.x + p.w for p in sheet.placed)
+    bottom = max(p.y + p.h for p in sheet.placed)
+    for _text, x, y, _upright in labels:  # in the white round the arrangement, never on a photo
+        assert not (left <= x <= right and top <= y <= bottom)
+        assert not any(p.x <= x <= p.x + p.w and p.y <= y <= p.y + p.h for p in sheet.placed)
+    # Drawn on the printed sheet (light grey), not touching the photos.
+    images = {}
+    for n, p in enumerate(ps):
+        path = tmp_path / f"{n}.jpg"
+        Image.new("RGB", (p.width, p.height), (200, 40, 40)).save(path)
+        images[p.path] = Image.open(path).convert("RGB")
+    page = render(sheet, images)
+    text, x, y, upright = labels[0]
+    near = page.crop((x - 120, y - 40, x + 120, y + 40)) if upright else page.crop((x - 40, y - 120, x + 40, y + 120))
+    assert min(near.convert("L").getdata()) < 200  # some grey text there
+    assert not print_sheet.cuts_cross_a_photo(sheet)
+
+
+def test_print_sheet_panel_refreshes_cleanly(tmp_path):
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from media_manager.print_sheet_window import PrintSheetWindow
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    photo = tmp_path / ("A very long name " * 6 + "- 3x4 No.jpg")
+    Image.new("RGB", SIZES["3x4"], (200, 100, 50)).save(photo)
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.3)
+    sheet = PrintSheetWindow(win.photos, win.media, [str(photo)])
+    sheet.show()
+    _wait(lambda: False, 0.2)
+    for _ in range(3):  # Auto-arrange, Turn… refill the list
+        sheet.arrange()
+        _wait(lambda: False, 0.1)
+    hints = [lb for lb in sheet.side.findChildren(QLabel) if lb.isVisible() and "Brighter" in lb.text()]
+    assert len(hints) == 1  # not one per refill
+    name = sheet.names[id(sheet.pieces[0])]
+    assert "…" in name.text() and name.toolTip().startswith(str(photo))  # a long name shortened (tooltip: all)
+    assert sheet.side.width() <= 380
     sheet.close()
     win.close()

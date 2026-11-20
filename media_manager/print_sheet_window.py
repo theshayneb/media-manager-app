@@ -100,6 +100,16 @@ class SheetView(QWidget):
         for x0, y0, x1, y1 in print_sheet.crop_marks(self.sheet):
             painter.drawLine(QPointF(frame.left() + x0 * s, frame.top() + y0 * s),
                              QPointF(frame.left() + x1 * s, frame.top() + y1 * s))
+        font = painter.font()
+        font.setPixelSize(max(7, round(print_sheet.LABEL * s * 1.2)))
+        painter.setFont(font)
+        for text, x, y, upright in print_sheet.week_labels(self.sheet):
+            painter.save()
+            painter.translate(frame.left() + x * s, frame.top() + y * s)
+            if not upright:
+                painter.rotate(-90)
+            painter.drawText(QRectF(-200, -20, 400, 40), Qt.AlignmentFlag.AlignCenter, text)
+            painter.restore()
 
     @staticmethod
     def _key(p: Placed) -> str:
@@ -140,6 +150,8 @@ class PrintSheetWindow(QDialog):
                 self.pieces.append(print_sheet.piece_for(path))
             except Exception as exc:  # noqa: BLE001
                 problems.append(f"{os.path.basename(path)}: {exc}")
+        for piece in self.pieces:  # its scrapbook week (printed small beside it)
+            piece.week = self._week_of(piece.path)
         self.sheets: list[Sheet] = []
         self.leftover: list[Piece] = []
         self.names: dict[int, QLabel] = {}
@@ -230,7 +242,8 @@ class PrintSheetWindow(QDialog):
         scroll = QScrollArea()
         scroll.setWidget(self.side)
         scroll.setWidgetResizable(True)
-        scroll.setFixedWidth(330)
+        scroll.setFixedWidth(380)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # (nothing cut off at the left)
 
         main = QHBoxLayout()
         main.addWidget(self.view, 1)
@@ -337,8 +350,11 @@ class PrintSheetWindow(QDialog):
     def _fill_side(self) -> None:
         while self.side_layout.count():
             item = self.side_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            old = item.widget()
+            if old is not None:  # gone at once (deleteLater alone left it drawn over the new rows a moment)
+                old.hide()
+                old.setParent(None)
+                old.deleteLater()
         self.names: dict[int, QLabel] = {}
         for sheet in self.sheets:
             self.side_layout.addWidget(QLabel(f"<b>On this sheet</b> ({len(sheet.placed)})"))
@@ -349,8 +365,10 @@ class PrintSheetWindow(QDialog):
             title.setWordWrap(True)
             self.side_layout.addWidget(title)
             for piece in self.leftover:
-                name = QLabel(os.path.basename(piece.path))
-                name.setWordWrap(True)
+                name = QLabel()
+                name.setText(name.fontMetrics().elidedText(os.path.basename(piece.path),
+                                                           Qt.TextElideMode.ElideMiddle, 330))
+                name.setToolTip(piece.path)
                 name.setStyleSheet("color: palette(placeholder-text);")
                 self.side_layout.addWidget(name)
         self.select(self.view.selected)
@@ -365,8 +383,10 @@ class PrintSheetWindow(QDialog):
         row = QWidget()
         h = QHBoxLayout(row)
         h.setContentsMargins(0, 0, 0, 0)
-        name = QLabel(os.path.basename(piece.path))
-        name.setWordWrap(True)
+        name = QLabel()
+        # Long names shortened in the middle (they can't wrap, and pushed the panel wider than its space).
+        name.setText(name.fontMetrics().elidedText(os.path.basename(piece.path), Qt.TextElideMode.ElideMiddle, 175))
+        name.setMinimumWidth(40)
         name.setToolTip(piece.path + "\n(click to pick it on the sheet)")
         name.setCursor(Qt.CursorShape.PointingHandCursor)
         name.mousePressEvent = lambda _e: self.select(piece)  # type: ignore[method-assign]
@@ -394,6 +414,18 @@ class PrintSheetWindow(QDialog):
         return row
 
     # ---------------------------------------------------------------- out
+    def _week_of(self, path: str) -> str:
+        from photo_manager.ui.grid import album_week
+
+        from .layouts import date_taken
+
+        item = self.photos.model.item(path)
+        meta = getattr(item, "meta", None)
+        taken = meta.date_taken if meta is not None and meta.date_taken is not None else date_taken(path)
+        if taken is None:
+            return ""
+        return f"Week {album_week(taken.date(), getattr(self.photos.settings, 'week_start', 'sunday'))[1]}"
+
     def _week(self) -> str:
         """"Week 46" (the scrapbook week of the first photo with a date taken)."""
         from photo_manager.ui.grid import album_week
@@ -416,7 +448,7 @@ class PrintSheetWindow(QDialog):
         try:
             for n, sheet in enumerate(self.sheets, start=1):
                 saved.append(print_sheet.save(sheet, folder, print_sheet.sheet_name(week, n),
-                                              self.media.print_grey, self.media.print_brown, self.picks))
+                                              "D", "D", self.picks))
         finally:
             self.unsetCursor()
         self.note.setText("Saved " + ", ".join(os.path.basename(p) for p in saved) + f" in {folder}")
@@ -447,8 +479,7 @@ class PrintSheetWindow(QDialog):
                 elif not printer.newPage():
                     raise OSError("The printer couldn't start a new page")
                 image = _qimage(print_sheet.to_printer(
-                    print_sheet.render(sheet, grey=self.media.print_grey, brown=self.media.print_brown,
-                                       picks=self.picks),
+                    print_sheet.render(sheet, picks=self.picks),
                     self.media.printer_profile))
                 # The whole paper, in the printer's own pixels: the sheet (8.5 × 11 in) fills it exactly, so every
                 # photo prints at its real size.
@@ -482,29 +513,22 @@ class PrintSheetWindow(QDialog):
     def _fill_colours(self) -> None:
         while self.colours_layout.count():
             item = self.colours_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            old = item.widget()
+            if old is not None:  # gone at once (deleteLater alone left it drawn over the new rows a moment)
+                old.hide()
+                old.setParent(None)
+                old.deleteLater()
         tip = "Used when printing and saving; the screen shows the photos as they are"
-        for name, key, colour in (("Greys", "print_grey", "#808080"), ("Browns", "print_brown", "#8c6a4a")):
-            row = QWidget()
-            h = QHBoxLayout(row)
-            h.setContentsMargins(0, 0, 0, 0)
-            h.addWidget(_swatch(colour))
-            h.addWidget(QLabel(name), 1)
-            box = _letters(getattr(self.media, key), f"{name}: A cooler … G warmer. {tip}")
-            box.currentIndexChanged.connect(lambda _i, b=box, k=key: setattr(self.media, k, b.currentData()))
-            h.addWidget(box)
-            self.colours_layout.addWidget(row)
-            if key == "print_grey":
-                self.grey_box = box
-            else:
-                self.brown_box = box
         for pick in self.picks:
             row = QWidget()
             h = QHBoxLayout(row)
             h.setContentsMargins(0, 0, 0, 0)
             h.addWidget(_swatch("#%02x%02x%02x" % tuple(pick.rgb)))
-            label = QLabel(f"{pick.name}" + (f"<br><small>from {pick.source}</small>" if pick.source else ""))
+            source = self.fontMetrics().elidedText(pick.source, Qt.TextElideMode.ElideMiddle, 130)
+            label = QLabel(f"{pick.name}" + (f"<br><small>from {source}</small>" if pick.source else ""))
+            label.setToolTip(pick.source)
+            label.setWordWrap(True)
+            label.setMinimumWidth(60)
             h.addWidget(label, 1)
             a, g = pick.sides()
             shade = _letters(pick.shade, f"Shade: A more {a} … G more {g}. {tip}")
@@ -526,6 +550,15 @@ class PrintSheetWindow(QDialog):
             h.addWidget(remove)
             self.colours_layout.addWidget(row)
         self.pick_btn.setEnabled(len(self.picks) < print_sheet.MAX_PICKS)
+        self.check_btn.setEnabled(bool(self.picks))
+        self.check_btn.setToolTip("Print a test page (its own page, not the sheet): each picked colour in seven "
+                                  "versions A–G, to see which looks right on your paper" if self.picks else
+                                  "Pick a colour first (＋ Pick colour, then click it in a photo on the sheet)")
+        if not self.picks:
+            hint = QLabel("Pick colours your printer gets wrong (greys, browns, purples…) with ＋ Pick colour.")
+            hint.setWordWrap(True)
+            hint.setStyleSheet("color: palette(placeholder-text); font-size: 11px;")
+            self.colours_layout.addWidget(hint)
 
     def _save_picks(self) -> None:
         self.media.check_colours = [p.to_dict() for p in self.picks]

@@ -36,6 +36,7 @@ class Piece:
     height: int
     brighter: int = 0  # 0: as it is; else this much brighter on the sheet (Edit's Brightness scale)
     turn: bool | None = None  # None: whichever fits better; True/False: turned sideways or not (the user's)
+    week: str = ""  # "Week 46": printed small beside it, to keep each week's prints together
 
     @property
     def area(self) -> int:
@@ -220,6 +221,38 @@ def crop_marks(sheet: Sheet) -> list[tuple[int, int, int, int]]:
     return marks
 
 
+LABEL = 42          # week labels: text this tall (0.07 in)
+LABEL_COLOUR = (150, 150, 150)
+
+
+def week_labels(sheet: Sheet) -> list[tuple[str, int, int, bool]]:
+    """(text, centre x, centre y, upright?) of each photo's week label: in the white round the arrangement,
+    beside the middle of the photo's outer edge (above it, below it, or turned along its left/right side),
+    between the crop marks; none for a photo with no outer edge or no room (it never touches a photo)."""
+    if not sheet.placed:
+        return []
+    left = min(p.x for p in sheet.placed)
+    top = min(p.y for p in sheet.placed)
+    right = max(p.x + p.w for p in sheet.placed)
+    bottom = max(p.y + p.h for p in sheet.placed)
+    width, height = sheet.size
+    band = MARK_GAP + MARK // 2  # the middle of the band the crop marks are in (beside them, not on them)
+    room = LABEL + MARK_GAP
+    out = []
+    for p in sheet.placed:
+        if not p.piece.week:
+            continue
+        sides = [(p.y == top and top >= band + room // 2, (p.x + p.w // 2, top - band), True),
+                 (p.y + p.h == bottom and height - bottom >= band + room // 2, (p.x + p.w // 2, bottom + band), True),
+                 (p.x == left and left >= band + room // 2, (left - band, p.y + p.h // 2), False),
+                 (p.x + p.w == right and width - right >= band + room // 2, (right + band, p.y + p.h // 2), False)]
+        for fits, (x, y), upright in sides:
+            if fits:
+                out.append((p.piece.week, x, y, upright))
+                break
+    return out
+
+
 def cuts_cross_a_photo(sheet: Sheet) -> bool:
     """True if a cut (any photo edge, carried all the way across) would go through a photo."""
     xs = {p.x for p in sheet.placed} | {p.x + p.w for p in sheet.placed}
@@ -259,6 +292,18 @@ def render(sheet: Sheet, images: dict[str, Image.Image] | None = None, grey: str
     draw = ImageDraw.Draw(page)
     for x0, y0, x1, y1 in crop_marks(sheet):
         draw.line((x0, y0, x1, y1), fill=MARK_COLOUR, width=3)
+    from PIL import ImageFont
+
+    font = ImageFont.load_default(size=LABEL)
+    for text, x, y, upright in week_labels(sheet):
+        if upright:
+            draw.text((x, y), text, fill=LABEL_COLOUR, font=font, anchor="mm")
+        else:  # along a side, reading upwards
+            box = draw.textbbox((0, 0), text, font=font)
+            label = Image.new("RGB", (box[2] - box[0] + 8, box[3] - box[1] + 8), "white")
+            ImageDraw.Draw(label).text((4 - box[0], 4 - box[1]), text, fill=LABEL_COLOUR, font=font)
+            label = label.rotate(90, expand=True)
+            page.paste(label, (x - label.width // 2, y - label.height // 2))
     return page
 
 
@@ -613,9 +658,9 @@ def _around(path: str, fx: float, fy: float, side: int) -> Image.Image | None:
 
 
 def colour_check(paths: list[str], picks: list[Pick] | tuple = ()) -> Image.Image:
-    """The colour check page (landscape, 600 DPI, its own page): a row per thing to check, each in seven
-    versions A–G: greys and browns (cooler ↔ warmer, a piece of the sheet's photos or a swatch), then each
-    picked colour twice (its Shade, then its Strength), a piece of the photo round where it was picked."""
+    """The colour check page (landscape, 600 DPI, its own page): each colour picked with the eyedropper twice
+    (its Shade, then its Strength), in seven versions A–G, a piece of the photo round where it was picked.
+    (paths: the sheet's photos; not used now that greys and browns are picked like any other colour.)"""
     from PIL import ImageFont
 
     width, height = PAPER[1], PAPER[0]
@@ -625,30 +670,11 @@ def colour_check(paths: list[str], picks: list[Pick] | tuple = ()) -> Image.Imag
     picks = list(picks)[:MAX_PICKS]
     label_w, left, top, bottom = 1100, 250, 560, 420
     column = (width - left - label_w - 250) // len(COLOUR_LETTERS)
-    n_rows = 2 + 2 * len(picks)
+    n_rows = max(1, 2 * len(picks))
     gap = 40
     side = min(column - 60, (height - top - bottom - gap * (n_rows - 1)) // n_rows)
 
-    def swatch(colours: list[tuple[int, int, int]]) -> Image.Image:
-        im = Image.new("RGB", (side, side), "white")
-        d = ImageDraw.Draw(im)
-        band = side // len(colours)
-        for n, colour in enumerate(colours):
-            d.rectangle((0, n * band, side, (n + 1) * band), fill=colour)
-        return im
-
-    grey_piece = brown_piece = None
-    for path in paths:  # the sheet's greyest and brownest parts
-        if grey_piece is not None and brown_piece is not None:
-            break
-        try:
-            g, b = check_pieces(path, side)
-        except Exception:  # noqa: BLE001
-            continue
-        grey_piece = grey_piece or g
-        brown_piece = brown_piece or b
-    rows = [("Greys", "A cooler · G warmer", grey_piece or swatch(GREYS), lambda im, L: colour_fix(im, grey=L)),
-            ("Browns", "A cooler · G warmer", brown_piece or swatch(BROWNS), lambda im, L: colour_fix(im, brown=L))]
+    rows: list = []
     for pick in picks:
         piece = (_around(pick.path, pick.fx, pick.fy, side) if pick.path else None) or \
             Image.new("RGB", (side, side), tuple(pick.rgb))

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.9
+
+- Print sheet: Greys and Browns are gone from Colours to check: pick them (or any colour) with the eyedropper.
+  (A grey/brown letter chosen before isn't used any more.)
+- Each photo's week ("Week 46") is printed small in light grey beside it, in the white round the arrangement
+  (above, below, or along its side, between the crop marks), never on a photo or its border.
+- Fixed: the panel beside the sheet was cut off at the left (long file names pushed it wider; they're shortened
+  in the middle now, the full name on hover), and refreshing it could leave old rows drawn over the new ones.
+
 ## 0.7.8
 
 - Print sheet: "Colours to check" beside the sheet. Greys and browns as before, and ＋ Pick colour: click any
