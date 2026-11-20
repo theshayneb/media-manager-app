@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from . import print_sheet
 from .print_sheet import Piece, Placed, Sheet
 
+SELECTED_NAME = "background: #3b6fc4; color: white; font-weight: bold; border-radius: 3px; padding: 1px 4px;"
 PREVIEW = 8  # the preview is drawn at 1/8 of the real size (75 DPI)
 
 
@@ -130,6 +131,8 @@ class PrintSheetWindow(QDialog):
             except Exception as exc:  # noqa: BLE001
                 problems.append(f"{os.path.basename(path)}: {exc}")
         self.sheets: list[Sheet] = []
+        self.leftover: list[Piece] = []
+        self.names: dict[int, QLabel] = {}
         self.current = 0
         self.thumbs: dict[str, Image.Image] = {}  # a small copy of each photo (for the preview)
 
@@ -144,8 +147,8 @@ class PrintSheetWindow(QDialog):
         self.next_btn.clicked.connect(lambda: self.go(1))
         self.page_label = QLabel("")
         self.used_label = QLabel("")
-        self.save_btn = QPushButton("💾 Save sheets")
-        self.save_btn.setToolTip("Each sheet as an 8.5 × 11 in picture at 600 DPI, in the Project Life folder")
+        self.save_btn = QPushButton("💾 Save sheet")
+        self.save_btn.setToolTip("The sheet as an 8.5 × 11 in picture at 600 DPI, in the Project Life folder")
         self.save_btn.clicked.connect(self.save_sheets)
         self.print_btn = QPushButton("🖨 Print…")
         self.print_btn.setDefault(True)
@@ -237,10 +240,14 @@ class PrintSheetWindow(QDialog):
         if reset_turns:
             for piece in self.pieces:
                 piece.turn = None
-        self.sheets, too_big = print_sheet.arrange(self.pieces)
+        # One sheet, filled as well as it can be (the user never prints a page that isn't full); the photos that
+        # don't fit are left over, not printed (and not marked), for the next sheet.
+        sheets, too_big = print_sheet.arrange(self.pieces)
+        self.sheets = sheets[:1]
+        self.leftover = [p.piece for sheet in sheets[1:] for p in sheet.placed]
         if too_big:
             self.note.setText("Too big for 8.5 × 11 paper: " + ", ".join(os.path.basename(p.path) for p in too_big))
-        self.current = min(self.current, max(0, len(self.sheets) - 1))
+        self.current = 0
         self._previews()
         self._show()
 
@@ -259,9 +266,11 @@ class PrintSheetWindow(QDialog):
         sheet = self.sheets[self.current] if self.sheets else None
         self.view.show_sheet(sheet)
         n = len(self.sheets)
-        self.page_label.setText(f"Sheet {self.current + 1} of {n}" if n else "Nothing to print")
-        self.prev_btn.setEnabled(self.current > 0)
-        self.next_btn.setEnabled(self.current < n - 1)
+        left = len(self.leftover)
+        self.page_label.setText(("One sheet" + (f" · {left} left over for the next one" if left else ""))
+                                if n else "Nothing to print")
+        self.prev_btn.hide()
+        self.next_btn.hide()
         self.used_label.setText(f"   Paper used: {round(sheet.used() * 100)}%" if sheet else "")
         self.print_btn.setEnabled(bool(n))
         self.save_btn.setEnabled(bool(n))
@@ -272,8 +281,11 @@ class PrintSheetWindow(QDialog):
         self._show()
 
     def select(self, piece: Piece | None) -> None:
+        """A photo picked on the sheet (or its name in the list): outlined there, its name coloured here."""
         self.view.selected = piece
         self.view.update()
+        for key, label in self.names.items():
+            label.setStyleSheet(SELECTED_NAME if piece is not None and key == id(piece) else "")
 
     def turn_selected(self) -> None:
         piece = self.view.selected
@@ -301,11 +313,21 @@ class PrintSheetWindow(QDialog):
             item = self.side_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        for n, sheet in enumerate(self.sheets):
-            title = QLabel(f"<b>Sheet {n + 1}</b> ({len(sheet.placed)})")
-            self.side_layout.addWidget(title)
+        self.names: dict[int, QLabel] = {}
+        for sheet in self.sheets:
+            self.side_layout.addWidget(QLabel(f"<b>On this sheet</b> ({len(sheet.placed)})"))
             for p in sheet.placed:
                 self.side_layout.addWidget(self._row(p.piece))
+        if self.leftover:
+            title = QLabel(f"<b>Left over</b> ({len(self.leftover)}): not printed, for the next sheet")
+            title.setWordWrap(True)
+            self.side_layout.addWidget(title)
+            for piece in self.leftover:
+                name = QLabel(os.path.basename(piece.path))
+                name.setWordWrap(True)
+                name.setStyleSheet("color: palette(placeholder-text);")
+                self.side_layout.addWidget(name)
+        self.select(self.view.selected)
         hint = QLabel("☀ Brighter: on the sheet only (the print copy isn't changed), each photo its own amount "
                       f"(Edit's Brightness; {print_sheet.BRIGHTER} is your Affinity brightness layer).")
         hint.setWordWrap(True)
@@ -319,7 +341,10 @@ class PrintSheetWindow(QDialog):
         h.setContentsMargins(0, 0, 0, 0)
         name = QLabel(os.path.basename(piece.path))
         name.setWordWrap(True)
-        name.setToolTip(piece.path)
+        name.setToolTip(piece.path + "\n(click to pick it on the sheet)")
+        name.setCursor(Qt.CursorShape.PointingHandCursor)
+        name.mousePressEvent = lambda _e: self.select(piece)  # type: ignore[method-assign]
+        self.names[id(piece)] = name
         check = QCheckBox("☀")
         check.setToolTip("Brighter on the sheet")
         check.setChecked(bool(piece.brighter))

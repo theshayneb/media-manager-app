@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.3
+
+- Print sheet makes one sheet, filled as well as it can be; the photos that don't fit are listed as Left over,
+  not printed and not marked 🖨, ready for the next sheet.
+- Picking a photo on the sheet colours its name in the list (☀ Brighter), and clicking a name picks the photo.
+- Ctrl+P opens Print sheet (Shift+S still works).
+
 ## 0.7.2
 
 - Print sheet: Printer profile. Media Manager finds the Canon iP8700 series (your iP8720) Matte Photo Paper

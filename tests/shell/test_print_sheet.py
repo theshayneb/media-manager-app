@@ -102,7 +102,7 @@ def test_print_sheet_window_prints_and_marks(tmp_path):
     pl = tmp_path / "Project Life"
     pl.mkdir()
     paths = []
-    for n in range(5):
+    for n in range(8):  # 6 fit on a sheet: 2 left over
         path = pl / f"IMG_{n} - 3x4 Border.jpg"
         im = Image.new("RGB", SIZES["3x4"], (100 + n * 20, 120, 140))
         exif = im.getexif()
@@ -118,8 +118,17 @@ def test_print_sheet_window_prints_and_marks(tmp_path):
     photos.open_folder(str(pl))
     assert _wait(lambda: all(i.meta is not None for i in photos.model.items), 10)
     sheet = PrintSheetWindow(photos, win.media, paths)
-    assert len(sheet.sheets) == 1 and len(sheet.sheets[0].placed) == 5
-    assert "Sheet 1 of 1" in sheet.page_label.text()
+    assert len(sheet.sheets) == 1 and len(sheet.sheets[0].placed) == 6  # one full sheet only
+    assert len(sheet.leftover) == 2 and "2 left over" in sheet.page_label.text()
+    on_sheet = [p.piece.path for p in sheet.sheets[0].placed]
+    left = [p.path for p in sheet.leftover]
+    # Picking a photo on the sheet colours its name in the list (and a name picks the photo).
+    piece = sheet.sheets[0].placed[2].piece
+    sheet.select(piece)
+    assert sheet.names[id(piece)].styleSheet() and not sheet.names[id(sheet.sheets[0].placed[0].piece)].styleSheet()
+    other = sheet.sheets[0].placed[0].piece
+    sheet.names[id(other)].mousePressEvent(None)
+    assert sheet.view.selected is other and sheet.names[id(other)].styleSheet()
     saved = sheet.save_sheets()
     assert [Path(p).name for p in saved] == ["Week 46 - Sheet 1.jpg"]
     printer = QPrinter(QPrinter.PrinterMode.HighResolution)
@@ -133,9 +142,12 @@ def test_print_sheet_window_prints_and_marks(tmp_path):
         photos.bg.wait(20000)
         _wait(lambda: False, 0.5)
         with ExifTool(find_exiftool()) as et:
-            [data] = et.read([paths[0]], ["-XMP-photoshop:Instructions"])
+            [data] = et.read([on_sheet[0]], ["-XMP-photoshop:Instructions"])
+            [unprinted] = et.read([left[0]], ["-XMP-photoshop:Instructions"])
         assert str(data.get("XMP:Instructions", "")).startswith("Printed by Media Manager")
-        assert _wait(lambda: photos.model.item(paths[0]).meta.printed, 10)  # the 🖨 in the grid
+        assert not unprinted.get("XMP:Instructions")  # left over: no 🖨
+        assert _wait(lambda: photos.model.item(on_sheet[0]).meta.printed, 10)  # the 🖨 in the grid
+        assert not photos.model.item(left[0]).meta.printed
     sheet.close()
     win.close()
 
@@ -185,3 +197,25 @@ def test_printer_profile(tmp_path):
     assert print_sheet.to_printer(im, "") is im
     with pytest.raises(OSError):
         print_sheet.to_printer(im, str(tmp_path / "Canon iP8700 series PR1.icc"))  # not a real profile
+
+
+
+def test_ctrl_p_opens_print_sheet(tmp_path, monkeypatch):
+    from PySide6.QtGui import QAction
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.3)
+    action = next(a for a in win.photos.findChildren(QAction) if a.text() == "Print sheet")
+    assert [k.toString() for k in action.shortcuts()] == ["Ctrl+P", "Shift+S"]
+    opened = []
+    win.photos.open_print_sheet = lambda: opened.append(True)
+    action.trigger()
+    assert opened
+    win.close()

@@ -300,13 +300,13 @@ def photo_bar(photos) -> tuple[FolderButton, QLineEdit]:  # type: ignore[no-unty
     edit.setToolTip("Edit: colour balance, contrast, shadows and highlights (Shift+E)")
     edit.triggered.connect(lambda: edit_selected(photos))
     sheet = QAction("Print sheet", photos)  # print copies on 8.5 × 11 paper (the shell sets open_print_sheet)
-    sheet.setShortcut(QKeySequence("Shift+S"))
+    sheet.setShortcuts([QKeySequence("Ctrl+P"), QKeySequence("Shift+S")])
     sheet.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
-    sheet.setToolTip("Print the selected print copies on 8.5 × 11 paper, laid out to waste the least (Shift+S)")
+    sheet.setToolTip("Print the selected print copies on 8.5 × 11 paper, laid out to waste the least (Ctrl+P)")
     sheet.triggered.connect(lambda: getattr(photos, "open_print_sheet", lambda: None)())
     photos.extra_menu_items = lambda paths: [
         ("Edit…", lambda: edit_selected(photos), "Shift+E", len(paths) == 1 and can_edit(paths[0])),
-        ("Print sheet…", lambda: getattr(photos, "open_print_sheet", lambda: None)(), "Shift+S", bool(paths))]
+        ("Print sheet…", lambda: getattr(photos, "open_print_sheet", lambda: None)(), "Ctrl+P", bool(paths))]
 
     search = QLineEdit()
     search.setPlaceholderText("Search names…")

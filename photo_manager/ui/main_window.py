@@ -410,7 +410,7 @@ class MainWindow(QMainWindow):
 
     # Keys the app already uses; label hotkeys can't take these.
     RESERVED_KEYS = {
-        "Ctrl+M": "Move to", "Ctrl+E": "Show in Explorer", "Ctrl+O": "Open", "Shift+X": "Open",
+        "Ctrl+M": "Move to", "Ctrl+E": "Show in Explorer", "Ctrl+O": "Open", "Shift+X": "Open", "Ctrl+P": "Print sheet",
         "Ctrl+D": "Favorite folder",
         "Ctrl+C": "Copy", "Ctrl+A": "Select all", "F2": "Rename", "F5": "Refresh", "F9": "Sidebar",
         "Shift+P": "Preview", "Ctrl+Shift+R": "Select files that need renaming", "Del": "Delete",
