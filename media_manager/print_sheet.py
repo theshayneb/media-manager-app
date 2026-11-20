@@ -244,13 +244,13 @@ def brighter(image: Image.Image, amount: int) -> Image.Image:
 
 
 def render(sheet: Sheet, images: dict[str, Image.Image] | None = None, grey: str = "D",
-           brown: str = "D") -> Image.Image:
+           brown: str = "D", picks: list | tuple = ()) -> Image.Image:
     """The sheet at 600 DPI: white paper, the photos at their own size (never scaled), the crop marks; with
     the printer's colour fix (grey, brown: the colour check's letters; "D" = none)."""
     page = Image.new("RGB", sheet.size, "white")
     for p in sheet.placed:
         image = (images or {}).get(p.piece.path) or load(p.piece.path)
-        image = colour_fix(brighter(image, p.piece.brighter), grey, brown)
+        image = apply_fixes(brighter(image, p.piece.brighter), grey, brown, picks)
         if p.turned:
             image = image.transpose(Image.Transpose.ROTATE_90)
         if image.size != (p.w, p.h):  # (not a print copy at its exact size: fitted, never cropped)
@@ -275,12 +275,12 @@ def is_sheet(path: str) -> bool:
     return bool(SHEET_FILE.match(os.path.basename(path)))
 
 
-def save(sheet: Sheet, folder: str, name: str, grey: str = "D", brown: str = "D") -> str:
+def save(sheet: Sheet, folder: str, name: str, grey: str = "D", brown: str = "D", picks: list | tuple = ()) -> str:
     from .print_size import free_path
 
     os.makedirs(folder, exist_ok=True)
     dest = free_path(Path(folder), name)
-    render(sheet, grey=grey, brown=brown).save(dest, "JPEG", quality=95, subsampling=0, dpi=(DPI, DPI))
+    render(sheet, grey=grey, brown=brown, picks=picks).save(dest, "JPEG", quality=95, subsampling=0, dpi=(DPI, DPI))
     return str(dest)
 
 
@@ -497,4 +497,178 @@ def colour_check_photos(paths: list[str]) -> Image.Image:
             y += side
     draw.text((width // 2, height - 330), "D = as it is now · A, B, C cooler · E, F, G warmer", fill=(90, 90, 90),
               font=small, anchor="mm")
+    return page
+
+
+# ------------------------------------------------------------------ colours picked with the eyedropper
+# Any colour the printer gets wrong (the user: yellows, purples), picked from a photo on the sheet. Each gets two
+# letters from the colour check: Shade (its hue towards one neighbour or the other: a purple bluer or pinker) and
+# Strength (duller or brighter). They change only colours like it: the same hue, about as strong (any lightness).
+HUE_NAMES = [(8, "red"), (25, "orange"), (45, "yellow"), (100, "green"), (130, "teal"), (180, "blue"),
+             (205, "purple"), (240, "pink"), (256, "red")]  # (up to this hue, 0–255), name
+SHADE_STEP = 3       # one letter: about 4° round the colour wheel
+STRENGTH_STEP = 0.1  # one letter: 10% more (or less) colour, and 4% lighter (darker)
+MAX_PICKS = 4
+
+
+@dataclass
+class Pick:
+    rgb: tuple[int, int, int]
+    name: str = ""
+    source: str = ""     # the photo it was picked from (its name)
+    path: str = ""       # … and where: fractions across and down the photo
+    fx: float = 0.5
+    fy: float = 0.5
+    shade: str = "D"
+    strength: str = "D"
+
+    def to_dict(self) -> dict:
+        return {"rgb": list(self.rgb), "name": self.name, "source": self.source, "path": self.path,
+                "fx": self.fx, "fy": self.fy, "shade": self.shade, "strength": self.strength}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Pick":
+        return cls(tuple(d.get("rgb", (128, 128, 128)))[:3], d.get("name", ""), d.get("source", ""),  # type: ignore[arg-type]
+                   d.get("path", ""), float(d.get("fx", 0.5)), float(d.get("fy", 0.5)), d.get("shade", "D"),
+                   d.get("strength", "D"))
+
+    def hsv(self) -> tuple[int, int, int]:
+        return Image.new("RGB", (1, 1), tuple(self.rgb)).convert("HSV").getpixel((0, 0))  # type: ignore[return-value]
+
+    def sides(self) -> tuple[str, str]:
+        """What its Shade letters move it towards: (A side, G side), e.g. ("blue", "pink") for a purple."""
+        h = self.hsv()[0]
+        names = [n for _top, n in HUE_NAMES]
+        i = next(n for n, (top, _name) in enumerate(HUE_NAMES) if h < top)
+        return names[(i - 1) % len(names)], names[(i + 1) % len(names)]
+
+
+def colour_name(rgb: tuple[int, int, int]) -> str:
+    h, s, v = Image.new("RGB", (1, 1), tuple(rgb)).convert("HSV").getpixel((0, 0))  # type: ignore[misc]
+    if s < 40:
+        return "Grey"
+    if 5 <= h <= 32 and v < 210 and s < 200:
+        return "Brown"
+    return next(name for top, name in HUE_NAMES if h < top).capitalize()
+
+
+def _pick_mask(image: Image.Image, pick: Pick) -> Image.Image:
+    """How much each pixel is "that colour": its hue close (full within ≈14°, none past ≈31°) and its strength
+    (saturation) similar, any lightness."""
+    ph, ps, _pv = pick.hsv()
+    h, s, _v = image.convert("HSV").split()
+
+    def hue_weight(x: int) -> int:
+        d = min(abs(x - ph), 256 - abs(x - ph))
+        return 255 if d <= 10 else max(0, 255 - (d - 10) * 21)
+
+    low, high = max(35, ps * 0.5), min(255, ps * 1.7 + 20)
+
+    def strength_weight(x: int) -> int:
+        if low <= x <= high:
+            return 255
+        gap = low - x if x < low else x - high
+        return max(0, 255 - int(gap * 17))
+
+    from PIL import ImageChops
+
+    return ImageChops.multiply(h.point(hue_weight), s.point(strength_weight))
+
+
+def pick_fix(image: Image.Image, pick: Pick, shade: str | None = None, strength: str | None = None) -> Image.Image:
+    """That colour (only) moved by its letters: Shade round the colour wheel, Strength duller/brighter."""
+    k = letter_steps(pick.shade if shade is None else shade)
+    j = letter_steps(pick.strength if strength is None else strength)
+    if not k and not j:
+        return image
+    rgb = image.convert("RGB")
+    h, s, v = rgb.convert("HSV").split()
+    if k:
+        h = h.point(lambda x: (x + k * SHADE_STEP) % 256)
+    if j:
+        s = s.point(lambda x: max(0, min(255, round(x * (1 + j * STRENGTH_STEP)))))
+        v = v.point(lambda x: max(0, min(255, round(x * (1 + j * STRENGTH_STEP * 0.4)))))
+    moved = Image.merge("HSV", (h, s, v)).convert("RGB")
+    return Image.composite(moved, rgb, _pick_mask(rgb, pick))
+
+
+def apply_fixes(image: Image.Image, grey: str = "D", brown: str = "D", picks: list[Pick] | tuple = ()) -> Image.Image:
+    """All the printer fixes chosen on the colour check: greys, browns and the picked colours."""
+    out = colour_fix(image, grey, brown)
+    for pick in picks:
+        out = pick_fix(out, pick)
+    return out
+
+
+def _around(path: str, fx: float, fy: float, side: int) -> Image.Image | None:
+    """A square piece of a photo round a spot (a fifth of its smaller side), side × side pixels."""
+    try:
+        image = load(path)
+    except Exception:  # noqa: BLE001
+        return None
+    size = max(16, min(image.size) // 5)
+    x = min(max(0, round(fx * image.width) - size // 2), image.width - size)
+    y = min(max(0, round(fy * image.height) - size // 2), image.height - size)
+    return image.crop((x, y, x + size, y + size)).resize((side, side), Image.Resampling.LANCZOS)
+
+
+def colour_check(paths: list[str], picks: list[Pick] | tuple = ()) -> Image.Image:
+    """The colour check page (landscape, 600 DPI, its own page): a row per thing to check, each in seven
+    versions A–G: greys and browns (cooler ↔ warmer, a piece of the sheet's photos or a swatch), then each
+    picked colour twice (its Shade, then its Strength), a piece of the photo round where it was picked."""
+    from PIL import ImageFont
+
+    width, height = PAPER[1], PAPER[0]
+    page = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(page)
+    big, small, tiny = (ImageFont.load_default(size=n) for n in (130, 64, 50))
+    picks = list(picks)[:MAX_PICKS]
+    label_w, left, top, bottom = 1100, 250, 560, 420
+    column = (width - left - label_w - 250) // len(COLOUR_LETTERS)
+    n_rows = 2 + 2 * len(picks)
+    gap = 40
+    side = min(column - 60, (height - top - bottom - gap * (n_rows - 1)) // n_rows)
+
+    def swatch(colours: list[tuple[int, int, int]]) -> Image.Image:
+        im = Image.new("RGB", (side, side), "white")
+        d = ImageDraw.Draw(im)
+        band = side // len(colours)
+        for n, colour in enumerate(colours):
+            d.rectangle((0, n * band, side, (n + 1) * band), fill=colour)
+        return im
+
+    grey_piece = brown_piece = None
+    for path in paths:  # the sheet's greyest and brownest parts
+        if grey_piece is not None and brown_piece is not None:
+            break
+        try:
+            g, b = check_pieces(path, side)
+        except Exception:  # noqa: BLE001
+            continue
+        grey_piece = grey_piece or g
+        brown_piece = brown_piece or b
+    rows = [("Greys", "A cooler · G warmer", grey_piece or swatch(GREYS), lambda im, L: colour_fix(im, grey=L)),
+            ("Browns", "A cooler · G warmer", brown_piece or swatch(BROWNS), lambda im, L: colour_fix(im, brown=L))]
+    for pick in picks:
+        piece = (_around(pick.path, pick.fx, pick.fy, side) if pick.path else None) or \
+            Image.new("RGB", (side, side), tuple(pick.rgb))
+        a, g = pick.sides()
+        name = pick.name or colour_name(pick.rgb)
+        rows.append((f"{name}: shade", f"A more {a} · G more {g}",
+                     piece, lambda im, L, p=pick: pick_fix(im, p, shade=L, strength="D")))
+        rows.append((f"{name}: strength", "A duller · G brighter",
+                     piece, lambda im, L, p=pick: pick_fix(im, p, shade="D", strength=L)))
+    draw.text((width // 2, 200), "Colour check: for each row, which column looks right on paper?", fill=(40, 40, 40),
+              font=small, anchor="mm")
+    x0 = left + label_w
+    for i, letter in enumerate(COLOUR_LETTERS):
+        draw.text((x0 + i * column + side // 2, top - 110), letter, fill=(30, 30, 30), font=big, anchor="mm")
+    y = top
+    for title, sides, piece, fix in rows:
+        draw.text((left, y + side // 2 - 40), title, fill=(30, 30, 30), font=small, anchor="lm")
+        draw.text((left, y + side // 2 + 40), sides, fill=(110, 110, 110), font=tiny, anchor="lm")
+        for i, letter in enumerate(COLOUR_LETTERS):
+            page.paste(fix(piece, letter), (x0 + i * column, y))
+        y += side + gap
+    draw.text((width // 2, height - 250), "D = as it is now", fill=(90, 90, 90), font=small, anchor="mm")
     return page

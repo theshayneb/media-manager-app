@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.8
+
+- Print sheet: "Colours to check" beside the sheet. Greys and browns as before, and ＋ Pick colour: click any
+  colour your printer gets wrong in a photo on the sheet (up to four, e.g. a purple and a yellow). Each picked
+  colour gets two letters from the 🎨 Colour check: Shade (e.g. A more blue … G more pink for a purple) and
+  Strength (A duller … G brighter). Printing (and saving) then changes only colours like it (the same hue,
+  similar strength, light or dark); ✕ removes one. Remembered for every sheet.
+- The 🎨 Colour check page has a row for each: greys, browns, and each picked colour's shade and strength, a
+  piece of the photo round where you picked it, in seven versions A–G.
+
 ## 0.7.7
 
 - Photos: Filter → 🖨 Printed / Not printed (by the 🖨 mark from Print sheet), to see what's left to print.

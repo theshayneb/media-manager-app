@@ -50,7 +50,8 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   QPrinter full page; marks print copies with XMP-photoshop:Instructions = metadata.PRINTED_MARK → Meta.printed,
   the 🖨 drawn by grid.paint_flags next to ✨; Photos' Filter → Printed / Not printed). Colour check:
   `colour_check_page` (swatches) / `colour_check_photos` (pieces of the sheet's photos), `colour_fix` (greys,
-  browns by letter A–G), `to_printer` (the ICC profile, settings.printer_profile).
+  browns by letter A–G), `to_printer` (the ICC profile, settings.printer_profile); `Pick`/`pick_fix`/
+  `apply_fixes`/`colour_check` (colours picked with the eyedropper, settings.check_colours: Shade and Strength letters).
   Not built yet, on purpose: the half-width insert,
   dragging photos into pockets, and a pocket starting Print size with its size.
 - `zoom.py`: mouse-wheel zoom/pan, used by the Edit window and patched into Photo Manager's preview CropCanvas.

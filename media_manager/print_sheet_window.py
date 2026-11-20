@@ -15,12 +15,14 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -43,6 +45,7 @@ class SheetView(QWidget):
     drag it onto another the same size to swap them."""
 
     picked = Signal(object)    # the Piece clicked
+    dropped = Signal(object, float, float)  # eyedropper: the Placed clicked, and where (fractions of it as shown)
     swapped = Signal(object, object)
 
     def __init__(self, parent: QWidget | None = None):
@@ -51,6 +54,7 @@ class SheetView(QWidget):
         self.small: dict[str, QImage] = {}
         self.selected: Piece | None = None
         self._drag: Placed | None = None
+        self.eyedropper = False
         self.setMinimumSize(400, 320)
 
     def show_sheet(self, sheet: Sheet | None) -> None:
@@ -108,6 +112,12 @@ class SheetView(QWidget):
 
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         hit = self._at(event.position())
+        if self.eyedropper:
+            if hit is not None:
+                r = self._rect(hit)
+                self.dropped.emit(hit, (event.position().x() - r.left()) / r.width(),
+                                  (event.position().y() - r.top()) / r.height())
+            return
         self._drag = hit
         self.picked.emit(hit.piece if hit else None)
 
@@ -155,21 +165,10 @@ class PrintSheetWindow(QDialog):
         self.print_btn.clicked.connect(self.print_sheets)
         # The printer's colour fix: print the colour check, then pick the column that looked right.
         self.check_btn = QPushButton("🎨 Colour check")
-        self.check_btn.setToolTip("Print a test page (its own page, not the sheet): the greyest and brownest parts "
-                                  "of the photos on this sheet (or plain swatches, with none) in columns A–G, to see "
-                                  "which looks right on your paper")
+        self.check_btn.setToolTip("Print a test page (its own page, not the sheet): every colour to check, in "
+                                  "seven versions A–G (pieces of the photos on this sheet), to see which looks right "
+                                  "on your paper")
         self.check_btn.clicked.connect(self.print_colour_check)
-        self.grey_box, self.brown_box = QComboBox(), QComboBox()
-        for box, value, tip in ((self.grey_box, media.print_grey, "Greys"),
-                                (self.brown_box, media.print_brown, "Browns")):
-            for letter in print_sheet.COLOUR_LETTERS:
-                box.addItem(letter + ("  (as it is)" if letter == "D" else ""), letter)
-            box.setCurrentIndex(max(0, box.findData(value)))
-            box.setToolTip(f"{tip}: the colour check's column that looked right (D = as it is). Used when printing "
-                           "and saving sheets; the screen shows them as they are.")
-        self.grey_box.currentIndexChanged.connect(lambda _i: setattr(media, "print_grey", self.grey_box.currentData()))
-        self.brown_box.currentIndexChanged.connect(
-            lambda _i: setattr(media, "print_brown", self.brown_box.currentData()))
         # The printer + paper's ICC profile (Canon's Matte Photo Paper one for the iP8720, found by itself).
         self.profile_box = QComboBox()
         self.profile_box.setMinimumContentsLength(22)
@@ -191,8 +190,7 @@ class PrintSheetWindow(QDialog):
         for w in (self.arrange_btn, self.turn_btn, self.prev_btn, self.page_label, self.next_btn, self.used_label):
             bar.addWidget(w)
         bar.addStretch(1)
-        for w in (QLabel("Printer profile:"), self.profile_box, self.check_btn, QLabel("Greys:"), self.grey_box,
-                  QLabel("Browns:"), self.brown_box):
+        for w in (QLabel("Printer profile:"), self.profile_box):
             bar.addWidget(w)
         bar.addSpacing(12)
         for w in (self.save_btn, self.print_btn, close):
@@ -203,8 +201,32 @@ class PrintSheetWindow(QDialog):
         self.view.swapped.connect(self.swap)
 
         self.side = QWidget()
-        self.side_layout = QVBoxLayout(self.side)
-        self.side_layout.setContentsMargins(6, 6, 6, 6)
+        outer = QVBoxLayout(self.side)
+        outer.setContentsMargins(6, 6, 6, 6)
+        # Colours to check (the printer's fixes): greys, browns, and colours picked with the eyedropper.
+        outer.addWidget(QLabel("<b>Colours to check</b>"))
+        self.colours = QWidget()
+        self.colours_layout = QVBoxLayout(self.colours)
+        self.colours_layout.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.colours)
+        buttons = QHBoxLayout()
+        self.pick_btn = QPushButton("＋ Pick colour")
+        self.pick_btn.setCheckable(True)
+        self.pick_btn.setToolTip("Then click a colour your printer gets wrong in a photo on the sheet")
+        self.pick_btn.toggled.connect(self._eyedropper)
+        buttons.addWidget(self.pick_btn)
+        buttons.addWidget(self.check_btn)
+        outer.addLayout(buttons)
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        outer.addWidget(line)
+        self.list_area = QWidget()
+        self.side_layout = QVBoxLayout(self.list_area)
+        self.side_layout.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.list_area, 1)
+        self.picks = [print_sheet.Pick.from_dict(d) for d in media.check_colours]
+        self.view.dropped.connect(self._picked_colour)
+        self._fill_colours()
         scroll = QScrollArea()
         scroll.setWidget(self.side)
         scroll.setWidgetResizable(True)
@@ -394,7 +416,7 @@ class PrintSheetWindow(QDialog):
         try:
             for n, sheet in enumerate(self.sheets, start=1):
                 saved.append(print_sheet.save(sheet, folder, print_sheet.sheet_name(week, n),
-                                              self.media.print_grey, self.media.print_brown))
+                                              self.media.print_grey, self.media.print_brown, self.picks))
         finally:
             self.unsetCursor()
         self.note.setText("Saved " + ", ".join(os.path.basename(p) for p in saved) + f" in {folder}")
@@ -425,7 +447,8 @@ class PrintSheetWindow(QDialog):
                 elif not printer.newPage():
                     raise OSError("The printer couldn't start a new page")
                 image = _qimage(print_sheet.to_printer(
-                    print_sheet.render(sheet, grey=self.media.print_grey, brown=self.media.print_brown),
+                    print_sheet.render(sheet, grey=self.media.print_grey, brown=self.media.print_brown,
+                                       picks=self.picks),
                     self.media.printer_profile))
                 # The whole paper, in the printer's own pixels: the sheet (8.5 × 11 in) fills it exactly, so every
                 # photo prints at its real size.
@@ -455,6 +478,91 @@ class PrintSheetWindow(QDialog):
         printer.setDocName(name)
         return printer
 
+    # ---------------------------------------------------------------- colours to check
+    def _fill_colours(self) -> None:
+        while self.colours_layout.count():
+            item = self.colours_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        tip = "Used when printing and saving; the screen shows the photos as they are"
+        for name, key, colour in (("Greys", "print_grey", "#808080"), ("Browns", "print_brown", "#8c6a4a")):
+            row = QWidget()
+            h = QHBoxLayout(row)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.addWidget(_swatch(colour))
+            h.addWidget(QLabel(name), 1)
+            box = _letters(getattr(self.media, key), f"{name}: A cooler … G warmer. {tip}")
+            box.currentIndexChanged.connect(lambda _i, b=box, k=key: setattr(self.media, k, b.currentData()))
+            h.addWidget(box)
+            self.colours_layout.addWidget(row)
+            if key == "print_grey":
+                self.grey_box = box
+            else:
+                self.brown_box = box
+        for pick in self.picks:
+            row = QWidget()
+            h = QHBoxLayout(row)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.addWidget(_swatch("#%02x%02x%02x" % tuple(pick.rgb)))
+            label = QLabel(f"{pick.name}" + (f"<br><small>from {pick.source}</small>" if pick.source else ""))
+            h.addWidget(label, 1)
+            a, g = pick.sides()
+            shade = _letters(pick.shade, f"Shade: A more {a} … G more {g}. {tip}")
+            strength = _letters(pick.strength, f"Strength: A duller … G brighter. {tip}")
+            shade.currentIndexChanged.connect(lambda _i, p=pick, b=shade: self._set_pick(p, "shade", b.currentData()))
+            strength.currentIndexChanged.connect(
+                lambda _i, p=pick, b=strength: self._set_pick(p, "strength", b.currentData()))
+            for caption, box in (("shade", shade), ("strength", strength)):
+                col = QVBoxLayout()
+                small = QLabel(caption)
+                small.setStyleSheet("color: palette(placeholder-text); font-size: 10px;")
+                col.addWidget(small)
+                col.addWidget(box)
+                h.addLayout(col)
+            remove = QToolButton(text="✕")
+            remove.setAutoRaise(True)
+            remove.setToolTip("Stop checking this colour")
+            remove.clicked.connect(lambda _c=False, p=pick: self._remove_pick(p))
+            h.addWidget(remove)
+            self.colours_layout.addWidget(row)
+        self.pick_btn.setEnabled(len(self.picks) < print_sheet.MAX_PICKS)
+
+    def _save_picks(self) -> None:
+        self.media.check_colours = [p.to_dict() for p in self.picks]
+
+    def _set_pick(self, pick: print_sheet.Pick, field: str, value: str) -> None:
+        setattr(pick, field, value)
+        self._save_picks()
+
+    def _remove_pick(self, pick: print_sheet.Pick) -> None:
+        self.picks = [p for p in self.picks if p is not pick]
+        self._save_picks()
+        self._fill_colours()
+
+    def _eyedropper(self, on: bool) -> None:
+        self.view.eyedropper = on
+        self.view.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
+        if on:
+            self.note.setText("Click a colour your printer gets wrong, in a photo on the sheet.")
+
+    def _picked_colour(self, placed: Placed, u: float, v: float) -> None:
+        """The eyedropper clicked a photo at (u, v) of it as shown: the colour there (a small spot's average)."""
+        fx, fy = (1 - v, u) if placed.turned else (u, v)  # (shown turned: ROTATE_90, back to the photo's own)
+        image = self.thumbs.get(placed.piece.path)
+        if image is None:
+            return
+        x, y = round(fx * (image.width - 1)), round(fy * (image.height - 1))
+        spot = image.crop((max(0, x - 2), max(0, y - 2), x + 3, y + 3)).resize((1, 1), Image.Resampling.BOX)
+        rgb = tuple(spot.convert("RGB").getpixel((0, 0)))
+        pick = print_sheet.Pick(rgb, print_sheet.colour_name(rgb), os.path.basename(placed.piece.path),
+                                placed.piece.path, fx, fy)
+        self.picks.append(pick)
+        self._save_picks()
+        self.pick_btn.setChecked(False)
+        self._fill_colours()
+        self.note.setText(f"Added {pick.name.lower()} from {pick.source}: print the 🎨 Colour check to choose its "
+                          "letters.")
+
     def _profile_chosen(self, _index: int) -> None:
         self.media.printer_profile = self.profile_box.currentData() or ""
         self._profile_note()
@@ -475,7 +583,7 @@ class PrintSheetWindow(QDialog):
         on_sheet = [p.piece.path for sheet in self.sheets for p in sheet.placed]
         self.setCursor(Qt.CursorShape.WaitCursor)
         try:
-            check = print_sheet.colour_check_photos(on_sheet) if on_sheet else print_sheet.colour_check_page()
+            check = print_sheet.colour_check(on_sheet, self.picks)
         finally:
             self.unsetCursor()
         page = print_sheet.to_printer(check, self.media.printer_profile)
@@ -522,3 +630,19 @@ def open_print_sheet(photos, media) -> None:  # type: ignore[no-untyped-def]
     window = PrintSheetWindow(photos, media, paths)
     window.setWindowState(Qt.WindowState.WindowMaximized)
     window.exec()
+
+
+def _letters(value: str, tip: str) -> QComboBox:
+    box = QComboBox()
+    for letter in print_sheet.COLOUR_LETTERS:
+        box.addItem(letter, letter)
+    box.setCurrentIndex(max(0, box.findData(value)))
+    box.setToolTip(tip + " (the colour check's column that looked right; D = as it is)")
+    return box
+
+
+def _swatch(colour: str) -> QLabel:
+    sw = QLabel()
+    sw.setFixedSize(22, 22)
+    sw.setStyleSheet(f"background: {colour}; border: 1px solid #555; border-radius: 3px;")
+    return sw

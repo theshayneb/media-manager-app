@@ -278,3 +278,76 @@ def test_colour_check_from_the_sheets_photos(tmp_path):
     a = page.getpixel((400 + (column - 200) // 2 + 300, 700))  # column A, first grey piece: cooler
     d = page.getpixel((400 + 3 * column + (column - 200) // 2 + 300, 700))  # column D: as it is
     assert a[2] > a[0] and abs(d[0] - d[2]) < 8
+
+
+def test_picked_colours_change_only_colours_like_them():
+    purple = print_sheet.Pick((154, 82, 207))
+    assert print_sheet.colour_name(purple.rgb) == "Purple" and purple.sides() == ("blue", "pink")
+    assert print_sheet.colour_name((239, 203, 48)) == "Yellow"
+    im = Image.new("RGB", (5, 1))
+    colours = [(154, 82, 207), (90, 40, 120), (200, 170, 230), (239, 203, 48), (128, 128, 128)]
+    for x, c in enumerate(colours):  # purple, dark plum, light lilac, yellow, grey
+        im.putpixel((x, 0), c)
+    purple.shade = "G"  # more pink
+    out = print_sheet.pick_fix(im, purple)
+    assert out.getpixel((0, 0))[0] > colours[0][0]  # redder (pinker)
+    assert out.getpixel((1, 0)) != colours[1]  # a darker purple of similar strength: changed too
+    assert out.getpixel((3, 0)) == colours[3] and out.getpixel((4, 0)) == colours[4]  # yellow, grey: untouched
+    purple.shade, purple.strength = "D", "A"  # duller
+    dull = print_sheet.pick_fix(im, purple).getpixel((0, 0))
+    assert max(dull) - min(dull) < max(colours[0]) - min(colours[0])
+    purple.strength = "D"
+    assert print_sheet.pick_fix(im, purple) is im
+    again = print_sheet.Pick.from_dict(purple.to_dict())
+    assert again == purple
+
+
+def test_colour_check_has_rows_for_picked_colours(tmp_path):
+    photo = tmp_path / "p.jpg"
+    Image.new("RGB", (900, 1200), (154, 82, 207)).save(photo)
+    pick = print_sheet.Pick((154, 82, 207), "Purple", "p.jpg", str(photo), 0.5, 0.5)
+    page = print_sheet.colour_check([str(photo)], [pick, print_sheet.Pick((239, 203, 48), "Yellow")])
+    assert page.size == (6600, 5100)
+    # Six rows (greys, browns, purple shade/strength, yellow shade/strength): the purple rows differ by column.
+    row_y = []
+    y = 560
+    side = min((6600 - 250 - 1100 - 250) // 7 - 60, (5100 - 560 - 420 - 40 * 5) // 6)
+    for _ in range(6):
+        row_y.append(y + side // 2)
+        y += side + 40
+    x0, column = 250 + 1100, (6600 - 250 - 1100 - 250) // 7
+    a = page.getpixel((x0 + side // 2, row_y[2]))
+    g = page.getpixel((x0 + 6 * column + side // 2, row_y[2]))
+    assert a != g and g[0] > a[0]  # G: more pink
+
+
+def test_eyedropper_in_the_print_sheet(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from media_manager.app import build_window
+    from media_manager.print_sheet_window import PrintSheetWindow
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    photo = tmp_path / "IMG_1 - 3x4 No.jpg"
+    im = Image.new("RGB", SIZES["3x4"], (239, 203, 48))
+    im.paste((154, 82, 207), (0, 0, 891, 1170))  # a purple top-left quarter
+    im.save(photo)
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.3)
+    sheet = PrintSheetWindow(win.photos, win.media, [str(photo)])
+    sheet.pick_btn.setChecked(True)
+    assert sheet.view.eyedropper
+    placed = sheet.sheets[0].placed[0]
+    u, v = (0.75, 0.25) if placed.turned else (0.25, 0.25)  # the purple part, as shown
+    sheet.view.dropped.emit(placed, u, v)
+    assert [p.name for p in sheet.picks] == ["Purple"] and not sheet.pick_btn.isChecked()
+    assert win.media.check_colours[0]["name"] == "Purple" and win.media.check_colours[0]["source"] == photo.name
+    sheet._set_pick(sheet.picks[0], "shade", "F")
+    assert win.media.check_colours[0]["shade"] == "F"
+    sheet._remove_pick(sheet.picks[0])
+    assert win.media.check_colours == []
+    sheet.close()
+    win.close()
