@@ -44,7 +44,8 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   name's size (`size_group`, GROUP_ORDER; `psd_layers`/`psd_spots`: a PSD's layers named "photo" are its photo
   spots; `TemplatesPanel`). Both tabs behind Details (`MediaWindow._behind_details`), refilled by a
   QFileSystemWatcher on settings.layouts_folder.
-  `print_sheet.py` (no Qt: guillotine/row packing on 8.5 × 11 at 600 DPI, centred, never resized; crop marks;
+  `print_sheet.py` (no Qt: grid packing — every cut goes all the way across, the user's rule — on 8.5 × 11 at
+  600 DPI, centred, never resized; one sheet, the rest left over; crop marks at both ends of every cut;
   per-photo brightness; render/save) + `print_sheet_window.py` (Photos' 🖨 Print sheet, Shift+S; prints via
   QPrinter full page; marks print copies with XMP-photoshop:Instructions = metadata.PRINTED_MARK → Meta.printed,
   the 🖨 drawn by grid.paint_flags next to ✨).

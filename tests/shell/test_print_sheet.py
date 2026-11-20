@@ -29,30 +29,42 @@ def check(sheet):
                 assert a.x + a.w <= b.x or b.x + b.w <= a.x or a.y + a.h <= b.y or b.y + b.h <= a.y
 
 
-@pytest.mark.parametrize("names,sheets", [
-    (["3x4"] * 6, 1), (["3x4"] * 4 + ["6x4"], 1), (["6x4"] * 3, 1), (["6x8", "3x4", "3x4"], 1),
-    (["3x8", "3x4", "3x4", "6x4"], 1), (["3x4"] * 12, 2), (["3x4"] * 7, 2),
+@pytest.mark.parametrize("names,placed", [
+    (["3x4"] * 6, 6), (["3x4"] * 8, 6), (["6x4"] * 3, 2), (["6x4", "3x4", "3x4"], 3),
+    (["3x8", "3x4", "3x4", "6x4"], 3), (["3x4"] * 4 + ["6x4"], 4), (["6x8", "3x4", "3x4"], 1),
 ])
-def test_arranged_on_as_few_sheets_as_possible(names, sheets):
+def test_the_first_sheet_is_as_full_as_a_cuttable_grid_allows(names, placed):
     result, too_big = arrange(pieces(*names))
-    assert len(result) == sheets and not too_big
+    assert not too_big and len(result[0].placed) == placed
     assert sum(len(s.placed) for s in result) == len(names)
     for sheet in result:
         check(sheet)
+        assert not print_sheet.cuts_cross_a_photo(sheet)
 
 
-def test_photos_touch_and_crop_marks_stay_off_the_photos():
-    [sheet], _ = arrange(pieces("3x4", "3x4", "3x4", "3x4", "6x4"))
-    edges = {(p.x + p.w, p.y) for p in sheet.placed}
-    assert any((q.x, q.y) in edges for q in sheet.placed)  # side by side, no gap
+def test_every_cut_goes_all_the_way_across_with_marks_at_both_ends():
+    [sheet, *_rest], _ = arrange(pieces("6x4", "3x4", "3x4"))
+    assert not print_sheet.cuts_cross_a_photo(sheet)
+    edges = {(p.x + p.w, p.y) for p in sheet.placed} | {(p.x, p.y + p.h) for p in sheet.placed}
+    assert any((q.x, q.y) in edges for q in sheet.placed)  # touching, no gap
     marks = crop_marks(sheet)
-    assert marks
-    for x0, y0, x1, y1 in marks:
-        for p in sheet.placed:  # no mark on a photo
-            inside_x = p.x < x0 < p.x + p.w - 1 or p.x < x1 < p.x + p.w - 1
-            inside_y = p.y < y0 < p.y + p.h - 1 or p.y < y1 < p.y + p.h - 1
-            assert not (inside_x and inside_y and (x0 == x1 or y0 == y1) and
-                        p.x < (x0 + x1) / 2 < p.x + p.w and p.y < (y0 + y1) / 2 < p.y + p.h)
+    left = min(p.x for p in sheet.placed)
+    right = max(p.x + p.w for p in sheet.placed)
+    top = min(p.y for p in sheet.placed)
+    bottom = max(p.y + p.h for p in sheet.placed)
+    for x in {p.x for p in sheet.placed} | {p.x + p.w for p in sheet.placed}:  # each column line: above and below
+        assert any(m[0] == m[2] == x and m[3] < top for m in marks)
+        assert any(m[0] == m[2] == x and m[1] > bottom for m in marks)
+    for y in {p.y for p in sheet.placed} | {p.y + p.h for p in sheet.placed}:  # each row line: left and right
+        assert any(m[1] == m[3] == y and m[2] < left for m in marks)
+        assert any(m[1] == m[3] == y and m[0] > right for m in marks)
+    # The user's example: a tall 6x4 beside two stacked ones isn't allowed (a cut would go through it).
+    from media_manager.print_sheet import Placed, Sheet
+
+    bad = Sheet(False, [Placed(Piece("a", 2340, 3520), 0, 500, False),
+                        Placed(Piece("b", 3520, 2340), 2340, 0, False),
+                        Placed(Piece("c", 3520, 2340), 2340, 2340, False)])
+    assert print_sheet.cuts_cross_a_photo(bad)
 
 
 def test_too_big_for_the_paper():
@@ -65,7 +77,8 @@ def test_rendered_at_600_dpi_at_its_real_size(tmp_path):
     Image.new("RGB", SIZES["3x4"], (200, 40, 40)).save(a, quality=95, dpi=(600, 600))
     b = tmp_path / "b - 6x4 No.jpg"
     Image.new("RGB", SIZES["6x4"], (40, 40, 200)).save(b, quality=95, dpi=(600, 600))
-    [sheet], _ = arrange([print_sheet.piece_for(str(a)), print_sheet.piece_for(str(b))])
+    [sheet], _ = arrange([print_sheet.piece_for(str(a)), print_sheet.piece_for(str(b)),
+                          print_sheet.piece_for(str(a))])
     page = render(sheet)
     assert page.size in ((5100, 6600), (6600, 5100))  # 8.5 × 11 in at 600 DPI
     for p in sheet.placed:

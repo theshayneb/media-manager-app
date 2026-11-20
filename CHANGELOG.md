@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.4
+
+- Print sheet: every cut now goes all the way across the sheet, so lined up on the crop marks at both ends it
+  never touches a photo, whatever order you cut in. The photos form a grid (every photo in a column the same
+  width, every photo in a row the same height); mixes that can't share such a grid wait for the next sheet.
+- Crop marks at both ends of every cut: above and below each column line, left and right of each row line.
+
 ## 0.7.3
 
 - Print sheet makes one sheet, filled as well as it can be; the photos that don't fit are listed as Left over,

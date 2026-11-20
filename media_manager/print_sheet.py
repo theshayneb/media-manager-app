@@ -1,10 +1,11 @@
 """Print sheet: print copies laid out on 8.5 × 11 in paper at 600 DPI, as the user did by hand in Affinity.
 
-- Photos touch edge to edge (no gap) and are placed so every cut can go straight across a piece
-  (guillotine packing), turned sideways when that fits more on; as few sheets as possible.
+- Photos touch edge to edge (no gap), in a grid: every cut goes all the way across the sheet, so lined up on
+  the crop marks at both ends it never touches a photo, whatever order you cut in; turned sideways when that
+  fits more on; as few sheets as possible (Print sheet uses the first, fullest one).
 - The whole arrangement is centred on the paper (printers can't print to the very edge), never resized:
   the prints' sizes (and white borders) must stay exactly as Print size made them.
-- Light grey crop marks show where to cut, in the white round the photos (never on a photo).
+- Light grey crop marks at both ends of every cut, in the white round the photos (never on one).
 - "Brighter" per photo, its own amount (21 by default, the user's Affinity brightness layer), on the sheet only.
 No Qt here except in the window (print_sheet_window.py).
 """
@@ -79,107 +80,78 @@ def piece_for(path: str) -> Piece:
 
 
 # ------------------------------------------------------------------ arranging
-def _pack(pieces: list[Piece], width: int, height: int, fit: str = "short", split: str = "short") -> list[Placed]:
-    """Guillotine packing into width × height (every split goes all the way across what's left, so each
-    cut is straight): in order, each into the free space it fits best (fit: "short" / "long" leftover side,
-    or "area"), turned if that fits better; what's left split along the shorter or longer leftover (split)."""
-    free = [(0, 0, width, height)]
+# Every cut goes all the way across the sheet (the user's rule: a rotary cutter lined up on the crop marks at
+# both ends, in any order, never touches a photo). So the photos form a grid: columns and rows, every photo in a
+# column as wide as the column and every photo in a row as tall as the row (cells may be empty).
+MAX_LINES = 4  # columns or rows on a sheet (the smallest print is 2.97 in: no more fit on 8.5 × 11)
+
+
+def _sizes(pieces: list[Piece]) -> list[int]:
+    return sorted({d for p in pieces for d in (p.width, p.height)})
+
+
+def _splits(values: list[int], room: int) -> list[tuple[int, ...]]:
+    """Every way (in order, sizes from values) of splitting room into 1…MAX_LINES columns (or rows)."""
+    out: list[tuple[int, ...]] = []
+
+    def grow(prefix: tuple[int, ...], used: int) -> None:
+        if prefix:
+            out.append(prefix)
+        if len(prefix) == MAX_LINES:
+            return
+        for v in values:
+            if prefix and v < prefix[-1]:  # (order doesn't change what fits: smallest first only)
+                continue
+            if used + v <= room:
+                grow(prefix + (v,), used + v)
+
+    grow((), 0)
+    return out
+
+
+def _fill(pieces: list[Piece], cols: tuple[int, ...], rows: tuple[int, ...]) -> list[Placed]:
+    """Put pieces into the grid's cells: a cell takes a piece exactly its size (either way round, unless the
+    user turned it), the biggest cells first."""
+    free = list(pieces)
     placed: list[Placed] = []
-    for piece in pieces:
-        best = None
-        for i, (_fx, _fy, fw, fh) in enumerate(free):
+    cells = [(c, r) for r in range(len(rows)) for c in range(len(cols))]
+    cells.sort(key=lambda cr: -(cols[cr[0]] * rows[cr[1]]))
+    for c, r in cells:
+        w, h = cols[c], rows[r]
+        choice = None
+        for piece in free:
             for turned in (False, True) if piece.turn is None else (piece.turn,):
-                w, h = (piece.height, piece.width) if turned else (piece.width, piece.height)
-                if w <= fw and h <= fh:
-                    a, b = sorted((fw - w, fh - h))
-                    score = {"short": (a, b), "long": (b, a), "area": (fw * fh - w * h, a)}[fit]
-                    if best is None or score < best[0]:
-                        best = (score, i, turned, w, h)
-        if best is None:
-            continue
-        _score, i, turned, w, h = best
-        fx, fy, fw, fh = free.pop(i)
-        placed.append(Placed(piece, fx, fy, turned))
-        right, below = fw - w, fh - h
-        across = (right < below) if split == "short" else (right >= below)
-        if across:  # the cut goes across under it: the space beside it is as tall as it is
-            parts = [(fx + w, fy, right, h), (fx, fy + h, fw, below)]
-        else:       # the cut goes down beside it
-            parts = [(fx + w, fy, right, fh), (fx, fy + h, w, below)]
-        free.extend(p for p in parts if p[2] > 0 and p[3] > 0)
-    return placed
-
-
-def _rows(pieces: list[Piece], width: int, height: int, policy: str) -> list[Placed]:
-    """Row by row (each row is one straight cut across the sheet): pieces stood the way policy says
-    ("as is", "wide", "tall"), tallest first, each into the first row it fits in (turned to fit, if allowed)."""
-    def stood(p: Piece) -> bool:  # turned?
-        if p.turn is not None:
-            return p.turn
-        if policy == "wide":
-            return p.height > p.width
-        if policy == "tall":
-            return p.width > p.height
-        return False
-
-    order = sorted(pieces, key=lambda p: (-(p.width if stood(p) else p.height), -p.area))
-    rows: list[list] = []  # [top, height, used width]
-    placed: list[Placed] = []
-    for piece in order:
-        options = [stood(piece)] + ([not stood(piece)] if piece.turn is None else [])
-        done = False
-        for row in rows:
-            for turned in options:
-                w, h = (piece.height, piece.width) if turned else (piece.width, piece.height)
-                if h <= row[1] and row[2] + w <= width:
-                    placed.append(Placed(piece, row[2], row[0], turned))
-                    row[2] += w
-                    done = True
-                    break
-            if done:
-                break
-        if done:
-            continue
-        top = sum(r[1] for r in rows)
-        turned = options[0]
-        w, h = (piece.height, piece.width) if turned else (piece.width, piece.height)
-        if w <= width and top + h <= height:
-            rows.append([top, h, w])
-            placed.append(Placed(piece, 0, top, turned))
+                pw, ph = (piece.height, piece.width) if turned else (piece.width, piece.height)
+                if (pw, ph) == (w, h) and (choice is None or (not turned and choice[1])):
+                    choice = (piece, turned)
+        if choice is not None:
+            free.remove(choice[0])
+            placed.append(Placed(choice[0], sum(cols[:c]), sum(rows[:r]), choice[1]))
     return placed
 
 
 def _best_pack(pieces: list[Piece], width: int, height: int) -> list[Placed]:
-    """The packing (of several ways of doing it) that puts the most on the sheet."""
-    orders = [
-        sorted(pieces, key=lambda p: (-p.area, -max(p.width, p.height))),
-        sorted(pieces, key=lambda p: (-max(p.width, p.height), -p.area)),
-        sorted(pieces, key=lambda p: (-min(p.width, p.height), -p.area)),
-    ]
+    """The grid that puts the most on the sheet; then the fewest turned sideways; then the tidiest."""
+    values = _sizes(pieces)
     best: list[Placed] = []
-    best_key: tuple = (-1, 0, 0)
-    for order in orders:
-        for fit in ("short", "long", "area"):
-            for split in ("short", "long"):
-                placed = _pack(order, width, height, fit, split)
+    best_key: tuple = (0,)
+    import itertools
+
+    for cols in _splits(values, width):
+        for rows in _splits(values, height):
+            for cols_order in set(itertools.permutations(cols)) if len(cols) <= 3 else [cols]:
+                placed = _fill(pieces, cols_order, rows)
+                if not placed:
+                    continue
+                # Columns and rows left empty don't count (they'd only spread the photos out).
+                used_cols = {p.x for p in placed}
+                used_rows = {p.y for p in placed}
+                if len(used_cols) < len(cols_order) or len(used_rows) < len(rows):
+                    continue
                 area = sum(p.w * p.h for p in placed)
-                # Most on the sheet; then the tidiest block (the smallest box round it: fewer cuts).
-                box = (max((p.x + p.w for p in placed), default=0) * max((p.y + p.h for p in placed), default=0))
-                key = (area, -box, -sum(p.turned for p in placed))  # (then: the fewest turned sideways)
+                key = (area, -sum(p.turned for p in placed), -(sum(cols_order) * sum(rows)))
                 if key > best_key:
                     best, best_key = placed, key
-    for policy in ("as is", "wide", "tall"):
-        for w, h, swap in ((width, height, False), (height, width, True)):  # rows, or columns (rows turned)
-            placed = _rows(pieces, w, h, policy)
-            if swap:  # columns: the same, with x and y swapped (and each piece turned the other way)
-                placed = [Placed(p.piece, p.y, p.x, not p.turned) for p in placed]
-                if any(p.piece.turn is not None and p.turned != p.piece.turn for p in placed):
-                    continue
-            area = sum(p.w * p.h for p in placed)
-            box = (max((p.x + p.w for p in placed), default=0) * max((p.y + p.h for p in placed), default=0))
-            key = (area, -box, -sum(p.turned for p in placed))
-            if key > best_key:
-                best, best_key = placed, key
     return best
 
 
@@ -226,33 +198,34 @@ def arrange(pieces: list[Piece]) -> tuple[list[Sheet], list[Piece]]:
 
 # ------------------------------------------------------------------ crop marks
 def crop_marks(sheet: Sheet) -> list[tuple[int, int, int, int]]:
-    """Short light-grey lines (x0, y0, x1, y1) carrying each photo edge out into the white round it, where it
-    meets no other photo: where to put the ruler and cut."""
-    rects = [(p.x, p.y, p.x + p.w, p.y + p.h) for p in sheet.placed]
-
-    def covered(x: int, y: int) -> bool:
-        return any(r[0] <= x < r[2] and r[1] <= y < r[3] for r in rects)
-
+    """Short light-grey lines (x0, y0, x1, y1) at both ends of every cut: each column line above and below the
+    photos, each row line left and right of them, in the white round the whole arrangement (line a ruler up
+    on the two marks and cut straight across)."""
+    if not sheet.placed:
+        return []
+    left = min(p.x for p in sheet.placed)
+    top = min(p.y for p in sheet.placed)
+    right = max(p.x + p.w for p in sheet.placed)
+    bottom = max(p.y + p.h for p in sheet.placed)
     width, height = sheet.size
-    marks: set[tuple[int, int, int, int]] = set()
-    for x0, y0, x1, y1 in rects:
-        for x in (x0, x1):  # vertical edges: out past the top and bottom
-            for y, direction in ((y0, -1), (y1, 1)):
-                probe = y + direction * (MARK_GAP + 1)
-                if 0 <= probe < height and not any(covered(x + dx, probe) for dx in (-1, 0)):
-                    start = y + direction * MARK_GAP
-                    end = max(0, min(height - 1, y + direction * (MARK_GAP + MARK)))
-                    if not any(covered(x + dx, end) for dx in (-1, 0)):
-                        marks.add((x, min(start, end), x, max(start, end)))
-        for y in (y0, y1):  # horizontal edges: out past the left and right
-            for x, direction in ((x0, -1), (x1, 1)):
-                probe = x + direction * (MARK_GAP + 1)
-                if 0 <= probe < width and not any(covered(probe, y + dy) for dy in (-1, 0)):
-                    start = x + direction * MARK_GAP
-                    end = max(0, min(width - 1, x + direction * (MARK_GAP + MARK)))
-                    if not any(covered(end, y + dy) for dy in (-1, 0)):
-                        marks.add((min(start, end), y, max(start, end), y))
-    return sorted(marks)
+    xs = sorted({p.x for p in sheet.placed} | {p.x + p.w for p in sheet.placed})
+    ys = sorted({p.y for p in sheet.placed} | {p.y + p.h for p in sheet.placed})
+    marks = []
+    for x in xs:
+        marks.append((x, max(0, top - MARK_GAP - MARK), x, max(0, top - MARK_GAP)))
+        marks.append((x, min(height - 1, bottom + MARK_GAP), x, min(height - 1, bottom + MARK_GAP + MARK)))
+    for y in ys:
+        marks.append((max(0, left - MARK_GAP - MARK), y, max(0, left - MARK_GAP), y))
+        marks.append((min(width - 1, right + MARK_GAP), y, min(width - 1, right + MARK_GAP + MARK), y))
+    return marks
+
+
+def cuts_cross_a_photo(sheet: Sheet) -> bool:
+    """True if a cut (any photo edge, carried all the way across) would go through a photo."""
+    xs = {p.x for p in sheet.placed} | {p.x + p.w for p in sheet.placed}
+    ys = {p.y for p in sheet.placed} | {p.y + p.h for p in sheet.placed}
+    return any(p.x < x < p.x + p.w for p in sheet.placed for x in xs) or \
+        any(p.y < y < p.y + p.h for p in sheet.placed for y in ys)
 
 
 # ------------------------------------------------------------------ the picture
