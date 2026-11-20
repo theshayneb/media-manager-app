@@ -162,3 +162,26 @@ def test_colour_check_page():
     a = page.getpixel((400 + 60 + 100, 900))
     d = page.getpixel((400 + 3 * column + 60 + 100, 900))
     assert a[2] > a[0] and d[0] == d[1] == d[2]  # A cooler, D a true grey
+
+
+def test_printer_profile(tmp_path):
+    from PIL import ImageCms
+
+    names = ["Canon iP8700 series PR1.icc", "Canon iP8700 series MP1.icc", "Canon iP8700 series GL1.icc",
+             "sRGB Color Space Profile.icm", "Canon MG5700 series MP1.icc"]
+    for name in names:
+        (tmp_path / name).write_bytes(b"x")
+    (tmp_path / "notes.txt").write_text("not a profile")
+    profiles = print_sheet.printer_profiles(tmp_path)
+    assert len(profiles) == 5
+    assert print_sheet.suggested_profile(profiles).name == "Canon iP8700 series MP1.icc"  # the matte one
+    assert print_sheet.suggested_profile([tmp_path / "Canon iP8700 series GL1.icc"]) is None
+    # A real profile: the colours converted (here sRGB to sRGB: nearly the same).
+    srgb = tmp_path / "test-srgb.icc"
+    srgb.write_bytes(ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes())
+    im = Image.new("RGB", (4, 4), (120, 100, 80))
+    out = print_sheet.to_printer(im, str(srgb))
+    assert all(abs(a - b) <= 3 for a, b in zip(out.getpixel((1, 1)), (120, 100, 80), strict=True))
+    assert print_sheet.to_printer(im, "") is im
+    with pytest.raises(OSError):
+        print_sheet.to_printer(im, str(tmp_path / "Canon iP8700 series PR1.icc"))  # not a real profile

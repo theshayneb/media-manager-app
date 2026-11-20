@@ -33,6 +33,8 @@ class MediaSettings:
     layouts_folder: str = r"C:\Users\talkt\Documents\Dashboard\Hobbies\Digital Craft Supplies\Digital Templates"
     print_grey: str = "D"       # the printer's colour fix (Print sheet's colour check): A cooler … D none … G warmer
     print_brown: str = "D"
+    printer_profile: str = "auto"  # the printer + paper ICC profile Print sheet converts for ("" none; "auto": find
+                                   # the iP8700 series' Matte Photo Paper one the first time)
     last_print_week: str = ""   # Print size's Week chosen last ("2026-46"): where a card without a date goes
     minimize_to_tray: bool = True  # the minimize button hides the window to the tray
     last_edit: dict = field(default_factory=dict)  # the sliders of the last photo saved ("Same as last edit")

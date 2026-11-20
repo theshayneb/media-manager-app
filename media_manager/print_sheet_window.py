@@ -166,12 +166,29 @@ class PrintSheetWindow(QDialog):
         self.grey_box.currentIndexChanged.connect(lambda _i: setattr(media, "print_grey", self.grey_box.currentData()))
         self.brown_box.currentIndexChanged.connect(
             lambda _i: setattr(media, "print_brown", self.brown_box.currentData()))
+        # The printer + paper's ICC profile (Canon's Matte Photo Paper one for the iP8720, found by itself).
+        self.profile_box = QComboBox()
+        self.profile_box.setMinimumContentsLength(22)
+        self.profile_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.profile_box.addItem("None (as Affinity prints now)", "")
+        profiles = print_sheet.printer_profiles()
+        for path in profiles:
+            self.profile_box.addItem(path.stem, str(path))
+        if media.printer_profile == "auto":
+            found = print_sheet.suggested_profile(profiles)
+            media.printer_profile = str(found) if found else ""
+        self.profile_box.setCurrentIndex(max(0, self.profile_box.findData(media.printer_profile)))
+        self.profile_box.setToolTip("Your printer and paper's colour profile: Media Manager makes the colours right "
+                                    "for them. In the Canon print dialog, turn its own colour correction off then "
+                                    "(Main → Color/Intensity: Manual → Set… → Matching → Color Correction: None).")
+        self.profile_box.currentIndexChanged.connect(self._profile_chosen)
         close = QPushButton("Close")
         close.clicked.connect(self.reject)
         for w in (self.arrange_btn, self.turn_btn, self.prev_btn, self.page_label, self.next_btn, self.used_label):
             bar.addWidget(w)
         bar.addStretch(1)
-        for w in (self.check_btn, QLabel("Greys:"), self.grey_box, QLabel("Browns:"), self.brown_box):
+        for w in (QLabel("Printer profile:"), self.profile_box, self.check_btn, QLabel("Greys:"), self.grey_box,
+                  QLabel("Browns:"), self.brown_box):
             bar.addWidget(w)
         bar.addSpacing(12)
         for w in (self.save_btn, self.print_btn, close):
@@ -203,6 +220,8 @@ class PrintSheetWindow(QDialog):
             self.note.setText("Not added: " + "; ".join(problems))
         self._make_thumbs()
         self.arrange()
+        if not problems:
+            self._profile_note()
 
     # ---------------------------------------------------------------- arranging
     def _make_thumbs(self) -> None:
@@ -376,8 +395,9 @@ class PrintSheetWindow(QDialog):
                         raise OSError("The printer couldn't start")
                 elif not printer.newPage():
                     raise OSError("The printer couldn't start a new page")
-                image = _qimage(print_sheet.render(sheet, grey=self.media.print_grey,
-                                                   brown=self.media.print_brown))
+                image = _qimage(print_sheet.to_printer(
+                    print_sheet.render(sheet, grey=self.media.print_grey, brown=self.media.print_brown),
+                    self.media.printer_profile))
                 # The whole paper, in the printer's own pixels: the sheet (8.5 × 11 in) fills it exactly, so every
                 # photo prints at its real size.
                 painter.drawImage(printer.paperRect(QPrinter.Unit.DevicePixel), image)
@@ -406,13 +426,24 @@ class PrintSheetWindow(QDialog):
         printer.setDocName(name)
         return printer
 
+    def _profile_chosen(self, _index: int) -> None:
+        self.media.printer_profile = self.profile_box.currentData() or ""
+        self._profile_note()
+
+    def _profile_note(self) -> None:
+        if self.media.printer_profile:
+            self.note.setText(f"Printing with {os.path.basename(self.media.printer_profile)}: in the Canon print "
+                              "dialog turn its colour correction off (Main → Color/Intensity: Manual → Set… → "
+                              "Matching → Color Correction: None), and choose Matte Photo Paper.")
+
     def print_colour_check(self) -> None:
         from PySide6.QtPrintSupport import QPrintDialog
 
         printer = self._printer("Colour check")
         if QPrintDialog(printer, self).exec() != QDialog.DialogCode.Accepted:
             return
-        if self.print_page(printer, print_sheet.colour_check_page(), landscape=True):
+        page = print_sheet.to_printer(print_sheet.colour_check_page(), self.media.printer_profile)
+        if self.print_page(printer, page, landscape=True):
             self.note.setText("Colour check sent. On the paper, find the column whose greys look most like true "
                               "greys, and the one whose browns look right, and choose those letters here.")
 

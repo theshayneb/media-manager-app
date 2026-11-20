@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.2
+
+- Print sheet: Printer profile. Media Manager finds the Canon iP8700 series (your iP8720) Matte Photo Paper
+  profile that came with the printer driver, and converts the sheet's colours for that printer and paper when
+  printing (and the colour check). Turn the Canon driver's own colour correction off then: Main → Color/Intensity:
+  Manual → Set… → Matching → Color Correction: None. "None" prints as before.
+
 ## 0.7.1
 
 - Print sheet: 🎨 Colour check prints a page of grey and brown swatches in seven columns, A (cooler) … D (as it

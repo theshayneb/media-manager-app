@@ -75,11 +75,15 @@ def self_test(out_path: str) -> int:
         from PySide6.QtPrintSupport import QPrinter  # Print sheet
 
         result["print"] = QPrinter().resolution() > 0
+        from PIL import ImageCms  # Print sheet's printer profile
+
+        result["icc"] = bool(ImageCms.createProfile("sRGB"))
         window = build_window()
         window.close()
         result["icon"] = ICON.exists()
         result["ok"] = bool(ffmpeg and result["exiftool"] and result["convert_ok"] and result["heic"]
-                            and result["media"] and result["icon"] and result["print"])
+                            and result["media"] and result["icon"] and result["print"]
+                            and result["icc"])
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
         result["ok"] = False

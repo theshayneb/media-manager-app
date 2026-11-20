@@ -388,3 +388,47 @@ def colour_check_page() -> Image.Image:
     draw.text((width // 2, height - 330), "D = as it is now · A, B, C cooler · E, F, G warmer", fill=(90, 90, 90),
               font=small, anchor="mm")
     return page
+
+
+# ------------------------------------------------------------------ the printer's ICC profile
+# Canon's profiles for its own papers come with the printer driver (Windows keeps them in its colour folder);
+# the iP8700 series' Matte Photo Paper one has "MP" in its name. With a profile chosen, Media Manager converts
+# the sheet's colours for that printer and paper (perceptual), and the driver's own colour correction must be
+# off (Canon: Main → Color/Intensity: Manual → Set… → Matching → Color Correction: None).
+def colour_folder() -> Path:
+    return Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "spool" / "drivers" / "color"
+
+
+def printer_profiles(folder: Path | None = None) -> list[Path]:
+    folder = folder or colour_folder()
+    try:
+        return sorted((p for p in folder.iterdir() if p.suffix.lower() in (".icc", ".icm")),
+                      key=lambda p: p.name.casefold())
+    except OSError:
+        return []
+
+
+def suggested_profile(profiles: list[Path]) -> Path | None:
+    """The iP8700 series' (the user's iP8720) Matte Photo Paper profile, if it's there."""
+    canon = [p for p in profiles if re.search(r"ip\s*87", p.stem, re.IGNORECASE)]
+    matte = [p for p in canon if re.search(r"(^|[^a-z])(mp\d*|matte)([^a-z]|$)", p.stem, re.IGNORECASE)]
+    return (matte or [None])[0]
+
+
+_TRANSFORMS: dict[str, object] = {}
+
+
+def to_printer(image: Image.Image, profile: str) -> Image.Image:
+    """The sheet's colours (sRGB, as on screen) converted for the printer and paper's ICC profile."""
+    if not profile:
+        return image
+    from PIL import ImageCms
+
+    try:
+        if profile not in _TRANSFORMS:
+            _TRANSFORMS[profile] = ImageCms.buildTransform(
+                ImageCms.createProfile("sRGB"), ImageCms.getOpenProfile(profile), "RGB", "RGB",
+                renderingIntent=ImageCms.Intent.PERCEPTUAL)
+        return ImageCms.applyTransform(image.convert("RGB"), _TRANSFORMS[profile])
+    except (ImageCms.PyCMSError, OSError, ValueError) as exc:
+        raise OSError(f"Couldn't use the printer profile {os.path.basename(profile)}: {exc}") from exc
