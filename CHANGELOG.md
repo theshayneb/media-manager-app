@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.5
+
+- Print sheet opens with no photos selected too (Ctrl+P), so you can print the 🎨 Colour check (its own page)
+  and set the printer profile without choosing photos first.
+
 ## 0.7.4
 
 - Print sheet: every cut now goes all the way across the sheet, so lined up on the crop marks at both ends it

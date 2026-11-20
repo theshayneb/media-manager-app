@@ -232,3 +232,30 @@ def test_ctrl_p_opens_print_sheet(tmp_path, monkeypatch):
     action.trigger()
     assert opened
     win.close()
+
+
+def test_print_sheet_opens_with_nothing_selected(tmp_path):
+    """For the colour check (its own page): no photos needed."""
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from PySide6.QtPrintSupport import QPrinter
+
+    from media_manager.app import build_window
+    from media_manager.print_sheet_window import PrintSheetWindow
+    from tests.shell.test_window import _music_folders, _wait
+
+    _music_folders(tmp_path)
+    win = build_window()
+    win.show()
+    _wait(lambda: False, 0.3)
+    sheet = PrintSheetWindow(win.photos, win.media, [])
+    assert not sheet.sheets and not sheet.print_btn.isEnabled() and sheet.check_btn.isEnabled()
+    assert "Colour check" in sheet.note.text()
+    printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+    printer.setOutputFileName(str(tmp_path / "check.pdf"))
+    assert sheet.print_page(printer, print_sheet.colour_check_page(), landscape=True)
+    assert (tmp_path / "check.pdf").stat().st_size > 1000
+    sheet.close()
+    win.close()

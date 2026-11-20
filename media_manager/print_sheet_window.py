@@ -225,6 +225,9 @@ class PrintSheetWindow(QDialog):
         self.arrange()
         if not problems:
             self._profile_note()
+        if not self.pieces:
+            self.note.setText("No photos selected: the sheet is empty. 🎨 Colour check prints its own test page; to "
+                              "print photos, close this, select the print copies and open Print sheet again.")
 
     # ---------------------------------------------------------------- arranging
     def _make_thumbs(self) -> None:
@@ -505,11 +508,9 @@ class PrintSheetWindow(QDialog):
 
 
 def open_print_sheet(photos, media) -> None:  # type: ignore[no-untyped-def]
-    """Photos' 🖨 Print sheet (Shift+S): the selected pictures (print copies), else the current one."""
+    """Photos' 🖨 Print sheet (Ctrl+P): the selected pictures (print copies). With none selected it opens all the
+    same (for the colour check and the printer settings), with nothing on the sheet."""
     paths = [p for p in photos.grid.selected_paths() if photos.model.item(p) and photos.model.item(p).kind == "image"]
-    if not paths:
-        QMessageBox.information(photos, "Print sheet", "Select the print copies to print first.")
-        return
     window = PrintSheetWindow(photos, media, paths)
     window.setWindowState(Qt.WindowState.WindowMaximized)
     window.exec()
