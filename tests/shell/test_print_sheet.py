@@ -259,3 +259,22 @@ def test_print_sheet_opens_with_nothing_selected(tmp_path):
     assert (tmp_path / "check.pdf").stat().st_size > 1000
     sheet.close()
     win.close()
+
+
+def test_colour_check_from_the_sheets_photos(tmp_path):
+    grey_photo = tmp_path / "grey.jpg"
+    im = Image.new("RGB", (900, 1200), (40, 90, 200))  # mostly blue, a grey corner
+    im.paste((128, 128, 128), (0, 0, 450, 600))
+    im.save(grey_photo)
+    blue_photo = tmp_path / "blue.jpg"
+    Image.new("RGB", (900, 1200), (40, 90, 200)).save(blue_photo)
+    grey, brown = print_sheet.check_pieces(str(grey_photo), 200)
+    assert grey is not None and brown is None  # its grey part; no brown in it
+    g = grey.getpixel((20, 20))
+    assert abs(g[0] - g[2]) < 8  # a grey
+    page = print_sheet.colour_check_photos([str(grey_photo), str(blue_photo)])
+    assert page.size == (6600, 5100)
+    column = (6600 - 800) // 7
+    a = page.getpixel((400 + (column - 200) // 2 + 300, 700))  # column A, first grey piece: cooler
+    d = page.getpixel((400 + 3 * column + (column - 200) // 2 + 300, 700))  # column D: as it is
+    assert a[2] > a[0] and abs(d[0] - d[2]) < 8

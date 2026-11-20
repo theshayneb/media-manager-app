@@ -155,8 +155,9 @@ class PrintSheetWindow(QDialog):
         self.print_btn.clicked.connect(self.print_sheets)
         # The printer's colour fix: print the colour check, then pick the column that looked right.
         self.check_btn = QPushButton("🎨 Colour check")
-        self.check_btn.setToolTip("Print a page of grey and brown swatches (columns A–G) to see which looks right "
-                                  "on your paper")
+        self.check_btn.setToolTip("Print a test page (its own page, not the sheet): the greyest and brownest parts "
+                                  "of the photos on this sheet (or plain swatches, with none) in columns A–G, to see "
+                                  "which looks right on your paper")
         self.check_btn.clicked.connect(self.print_colour_check)
         self.grey_box, self.brown_box = QComboBox(), QComboBox()
         for box, value, tip in ((self.grey_box, media.print_grey, "Greys"),
@@ -470,7 +471,14 @@ class PrintSheetWindow(QDialog):
         printer = self._printer("Colour check")
         if QPrintDialog(printer, self).exec() != QDialog.DialogCode.Accepted:
             return
-        page = print_sheet.to_printer(print_sheet.colour_check_page(), self.media.printer_profile)
+        # With photos on the sheet: pieces of them (their greyest and brownest parts); else the plain swatches.
+        on_sheet = [p.piece.path for sheet in self.sheets for p in sheet.placed]
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        try:
+            check = print_sheet.colour_check_photos(on_sheet) if on_sheet else print_sheet.colour_check_page()
+        finally:
+            self.unsetCursor()
+        page = print_sheet.to_printer(check, self.media.printer_profile)
         if self.print_page(printer, page, landscape=True):
             self.note.setText("Colour check sent. On the paper, find the column whose greys look most like true "
                               "greys, and the one whose browns look right, and choose those letters here.")

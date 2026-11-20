@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.6
+
+- 🎨 Colour check uses the photos on the sheet: the greyest and the brownest parts of them (up to three of each),
+  in columns A–G, greys above and browns below, on its own page. With no photos (or no grey/brown in them) it
+  uses the plain swatches.
+
 ## 0.7.5
 
 - Print sheet opens with no photos selected too (Ctrl+P), so you can print the 🎨 Colour check (its own page)

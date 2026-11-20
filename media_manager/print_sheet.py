@@ -405,3 +405,96 @@ def to_printer(image: Image.Image, profile: str) -> Image.Image:
         return ImageCms.applyTransform(image.convert("RGB"), _TRANSFORMS[profile])
     except (ImageCms.PyCMSError, OSError, ValueError) as exc:
         raise OSError(f"Couldn't use the printer profile {os.path.basename(profile)}: {exc}") from exc
+
+
+# ------------------------------------------------------------------ the colour check from the sheet's own photos
+CHECK_PHOTOS = 3  # pieces of up to this many photos (each their greyest, then their brownest part)
+
+
+def _best_window(mask: Image.Image, size: int) -> tuple[int, int, float]:
+    """(x, y, how much: 0–255 on average) of the size × size square of mask with the most in it (coarse)."""
+    w, h = mask.size
+    size = min(size, w, h)
+    step = max(1, size // 4)
+    best, at = -1.0, (0, 0)
+    for y in range(0, h - size + 1, step):
+        for x in range(0, w - size + 1, step):
+            total = mask.crop((x, y, x + size, y + size)).resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))
+            if total > best:
+                best, at = total, (x, y)
+    return at[0], at[1], float(best)
+
+
+MIN_SHARE = 60  # a part counts as grey (brown) when this much of it is (0–255 on average)
+
+
+def check_pieces(path: str, side: int) -> tuple[Image.Image | None, Image.Image | None]:
+    """(its greyest part, its brownest part) of a photo, each side × side pixels (a square a third its size);
+    None where it has hardly any grey (brown)."""
+    image = load(path)
+    small = image.copy()
+    small.thumbnail((240, 240))
+    grey, brown = _masks(small)
+    scale = image.width / small.width
+    window = max(8, min(small.size) // 3)
+    out: list[Image.Image | None] = []
+    for mask in (grey, brown):
+        x, y, share = _best_window(mask, window)
+        if share < MIN_SHARE:
+            out.append(None)
+            continue
+        box = (round(x * scale), round(y * scale), round((x + window) * scale), round((y + window) * scale))
+        out.append(image.crop(box).resize((side, side), Image.Resampling.LANCZOS))
+    return out[0], out[1]
+
+
+def colour_check_photos(paths: list[str]) -> Image.Image:
+    """The colour check with pieces of the photos about to be printed: in each column A–G, their greyest parts
+    with that column's grey fix (above) and their brownest parts with its brown fix (below)."""
+    from PIL import ImageFont
+
+    width, height = PAPER[1], PAPER[0]
+    page = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(page)
+    big, small = ImageFont.load_default(size=150), ImageFont.load_default(size=70)
+    column = (width - 2 * 400) // len(COLOUR_LETTERS)
+    top = 650
+    side = min(column - 120, (height - top - 550 - 200) // (2 * CHECK_PHOTOS))
+    greys: list[Image.Image] = []
+    browns: list[Image.Image] = []
+    for path in paths:  # the photos with the most grey / brown in them, up to CHECK_PHOTOS of each
+        if len(greys) >= CHECK_PHOTOS and len(browns) >= CHECK_PHOTOS:
+            break
+        try:
+            grey, brown = check_pieces(path, side)
+        except Exception:  # noqa: BLE001
+            continue
+        if grey is not None and len(greys) < CHECK_PHOTOS:
+            greys.append(grey)
+        if brown is not None and len(browns) < CHECK_PHOTOS:
+            browns.append(brown)
+    # A kind none of the photos has: the plain swatches for it.
+    for found, colours in ((greys, GREYS), (browns, BROWNS)):
+        if not found:
+            swatch = Image.new("RGB", (side, side), "white")
+            sd = ImageDraw.Draw(swatch)
+            band = side // len(colours)
+            for n, colour in enumerate(colours):
+                sd.rectangle((0, n * band, side, (n + 1) * band), fill=colour)
+            found.append(swatch)
+    draw.text((width // 2, 260), "Colour check (your photos): which column looks right? greys above, browns below",
+              fill=(40, 40, 40), font=small, anchor="mm")
+    for i, letter in enumerate(COLOUR_LETTERS):
+        x = 400 + i * column + (column - side) // 2
+        draw.text((x + side // 2, top - 120), letter, fill=(30, 30, 30), font=big, anchor="mm")
+        y = top
+        for grey in greys:
+            page.paste(colour_fix(grey, grey=letter, brown="D"), (x, y))
+            y += side
+        y = top + CHECK_PHOTOS * side + 200
+        for brown in browns:
+            page.paste(colour_fix(brown, grey="D", brown=letter), (x, y))
+            y += side
+    draw.text((width // 2, height - 330), "D = as it is now · A, B, C cooler · E, F, G warmer", fill=(90, 90, 90),
+              font=small, anchor="mm")
+    return page
