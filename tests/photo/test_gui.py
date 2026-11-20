@@ -1527,3 +1527,23 @@ def test_psd_shows_its_picture(tmp_path):
     im = open_image(str(psd), 20)
     assert max(im.size) == 20 and im.getpixel((5, 5))[0] > 150
     assert thumbnail(str(psd), 16) is not None
+
+
+def test_filter_printed_and_not_printed(window):
+    win, folder, _ = window
+    names = sorted(os.listdir(folder))
+    items = [win.model.item(str(folder / n)) for n in names if win.model.item(str(folder / n))]
+    for item in items:
+        if item.meta is None:
+            from photo_manager.core.metadata import Meta
+
+            item.meta = Meta()
+    items[0].meta.printed = True
+    win.filters["printed"] = True
+    win.apply_filter()
+    assert [i.path for i in win.model.items] == [items[0].path] and win.filter_btn.text() == "Filter (1)"
+    win.filters["printed"], win.filters["not_printed"] = False, True
+    win.apply_filter()
+    assert items[0].path not in [i.path for i in win.model.items] and len(win.model.items) == len(items) - 1
+    win.clear_filter()
+    assert len(win.model.items) == len(items)

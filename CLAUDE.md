@@ -48,7 +48,9 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   600 DPI, centred, never resized; one sheet, the rest left over; crop marks at both ends of every cut;
   per-photo brightness; render/save) + `print_sheet_window.py` (Photos' 🖨 Print sheet, Shift+S; prints via
   QPrinter full page; marks print copies with XMP-photoshop:Instructions = metadata.PRINTED_MARK → Meta.printed,
-  the 🖨 drawn by grid.paint_flags next to ✨).
+  the 🖨 drawn by grid.paint_flags next to ✨; Photos' Filter → Printed / Not printed). Colour check:
+  `colour_check_page` (swatches) / `colour_check_photos` (pieces of the sheet's photos), `colour_fix` (greys,
+  browns by letter A–G), `to_printer` (the ICC profile, settings.printer_profile).
   Not built yet, on purpose: the half-width insert,
   dragging photos into pockets, and a pocket starting Print size with its size.
 - `zoom.py`: mouse-wheel zoom/pan, used by the Edit window and patched into Photo Manager's preview CropCanvas.

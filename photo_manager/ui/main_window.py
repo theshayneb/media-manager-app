@@ -125,7 +125,8 @@ class MainWindow(QMainWindow):
         self.preview.crop_requested.connect(self.crop_file)
         self.preview.active_changed.connect(self._compare_active)
         self.compare_paths: list[str] = []
-        self.filters = {"types": set(), "labels": set(), "needs_rename": False, "no_keywords": False}
+        self.filters = {"types": set(), "labels": set(), "needs_rename": False, "no_keywords": False,
+                        "printed": False, "not_printed": False}
         self.stack = QStackedWidget()
         self.stack.addWidget(self.grid)
         self.stack.addWidget(self.preview)
@@ -790,16 +791,21 @@ class MainWindow(QMainWindow):
         menu.addSection("Other")
         check("Needs rename", f["needs_rename"], lambda _c=False: toggle("needs_rename", None))
         check("No keywords", f["no_keywords"], lambda _c=False: toggle("no_keywords", None))
+        # Media Manager: printed from its Print sheet (the 🖨 mark) or not yet.
+        check("🖨 Printed", f.get("printed", False), lambda _c=False: toggle("printed", None))
+        check("Not printed", f.get("not_printed", False), lambda _c=False: toggle("not_printed", None))
         menu.addSeparator()
         clear = menu.addAction("Clear filter", self.clear_filter)
         clear.setEnabled(self._filter_active())
 
     def _filter_active(self) -> bool:
         f = self.filters
-        return bool(f["types"] or f["labels"] or f["needs_rename"] or f["no_keywords"])
+        return bool(f["types"] or f["labels"] or f["needs_rename"] or f["no_keywords"] or f.get("printed")
+                    or f.get("not_printed"))
 
     def clear_filter(self) -> None:
-        self.filters = {"types": set(), "labels": set(), "needs_rename": False, "no_keywords": False}
+        self.filters = {"types": set(), "labels": set(), "needs_rename": False, "no_keywords": False,
+                        "printed": False, "not_printed": False}
         self.apply_filter()
 
     def _passes_filter(self, item: Item) -> bool:
@@ -821,6 +827,11 @@ class MainWindow(QMainWindow):
             if regex is None or follows_pattern(item.name, regex):
                 return False
         if f["no_keywords"] and meta is not None and meta.keywords:
+            return False
+        printed = bool(meta and getattr(meta, "printed", False))
+        if f.get("printed") and not f.get("not_printed") and not printed:
+            return False
+        if f.get("not_printed") and not f.get("printed") and printed:
             return False
         return True
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.7
+
+- Photos: Filter → 🖨 Printed / Not printed (by the 🖨 mark from Print sheet), to see what's left to print.
+
 ## 0.7.6
 
 - 🎨 Colour check uses the photos on the sheet: the greyest and the brownest parts of them (up to three of each),
