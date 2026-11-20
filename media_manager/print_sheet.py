@@ -270,12 +270,14 @@ def brighter(image: Image.Image, amount: int) -> Image.Image:
     return apply(image, Adjustments(brightness=max(-100, min(100, amount))))
 
 
-def render(sheet: Sheet, images: dict[str, Image.Image] | None = None) -> Image.Image:
-    """The sheet at 600 DPI: white paper, the photos at their own size (never scaled), the crop marks."""
+def render(sheet: Sheet, images: dict[str, Image.Image] | None = None, grey: str = "D",
+           brown: str = "D") -> Image.Image:
+    """The sheet at 600 DPI: white paper, the photos at their own size (never scaled), the crop marks; with
+    the printer's colour fix (grey, brown: the colour check's letters; "D" = none)."""
     page = Image.new("RGB", sheet.size, "white")
     for p in sheet.placed:
         image = (images or {}).get(p.piece.path) or load(p.piece.path)
-        image = brighter(image, p.piece.brighter)
+        image = colour_fix(brighter(image, p.piece.brighter), grey, brown)
         if p.turned:
             image = image.transpose(Image.Transpose.ROTATE_90)
         if image.size != (p.w, p.h):  # (not a print copy at its exact size: fitted, never cropped)
@@ -300,10 +302,89 @@ def is_sheet(path: str) -> bool:
     return bool(SHEET_FILE.match(os.path.basename(path)))
 
 
-def save(sheet: Sheet, folder: str, name: str) -> str:
+def save(sheet: Sheet, folder: str, name: str, grey: str = "D", brown: str = "D") -> str:
     from .print_size import free_path
 
     os.makedirs(folder, exist_ok=True)
     dest = free_path(Path(folder), name)
-    render(sheet).save(dest, "JPEG", quality=95, subsampling=0, dpi=(DPI, DPI))
+    render(sheet, grey=grey, brown=brown).save(dest, "JPEG", quality=95, subsampling=0, dpi=(DPI, DPI))
     return str(dest)
+
+
+# ------------------------------------------------------------------ the printer's colours (greys and browns)
+# A test page prints grey and brown swatches at seven warmths, A (cooler) … D (as they are) … G (warmer). The
+# user picks the column that looks right on paper for greys and for browns; the sheets then print with that
+# fix, on greys and browns only (other colours, and the print copies themselves, are left alone).
+COLOUR_LETTERS = "ABCDEFG"
+COLOUR_STEP = 6  # one letter = this much on Edit's Blue ↔ Yellow slider
+GREYS = [(200, 200, 200), (150, 150, 150), (100, 100, 100), (60, 60, 60)]
+BROWNS = [(196, 160, 120), (150, 105, 70), (110, 75, 50), (70, 50, 35)]
+
+
+def letter_steps(letter: str) -> int:
+    """"A" → -3 (cooler) … "D" → 0 … "G" → +3 (warmer)."""
+    return COLOUR_LETTERS.index(letter) - 3 if letter in COLOUR_LETTERS else 0
+
+
+def _warmth(image: Image.Image, steps: int) -> Image.Image:
+    from .photo_edit import Adjustments, apply
+
+    return apply(image, Adjustments(yellow=steps * COLOUR_STEP)) if steps else image
+
+
+def _masks(image: Image.Image) -> tuple[Image.Image, Image.Image]:
+    """(greys, browns): how much each pixel is a grey (little colour) and a brown (orange, not bright)."""
+    h, s, v = image.convert("HSV").split()
+    grey = s.point(lambda x: max(0, 255 - x * 4))  # full at no colour, none from about a quarter colour
+    hue = h.point(lambda x: 255 if 5 <= x <= 32 else (128 if 2 <= x <= 38 else 0))  # orange-ish (≈ 7°–45°)
+    some_colour = s.point(lambda x: 0 if x < 40 else (255 if x < 200 else 128))
+    not_bright = v.point(lambda x: 255 if x < 210 else 0)
+    from PIL import ImageChops
+
+    brown = ImageChops.multiply(ImageChops.multiply(hue, some_colour), not_bright)
+    return grey, brown
+
+
+def colour_fix(image: Image.Image, grey: str = "D", brown: str = "D") -> Image.Image:
+    """The printer fix chosen on the colour check: greys and browns warmer or cooler, the rest as it is."""
+    g, b = letter_steps(grey), letter_steps(brown)
+    if not g and not b:
+        return image
+    grey_mask, brown_mask = _masks(image)
+    out = image
+    if g:
+        out = Image.composite(_warmth(image, g), out, grey_mask)
+    if b:
+        out = Image.composite(_warmth(image, b), out, brown_mask)
+    return out
+
+
+def colour_check_page() -> Image.Image:
+    """The test page (landscape, 600 DPI): a column per letter, greys above, browns below, each labelled."""
+    from PIL import ImageFont
+
+    width, height = PAPER[1], PAPER[0]
+    page = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(page)
+    big, small = ImageFont.load_default(size=150), ImageFont.load_default(size=70)
+    draw.text((width // 2, 260), "Colour check: which column looks right? (greys, then browns)", fill=(40, 40, 40),
+              font=small, anchor="mm")
+    column = (width - 2 * 400) // len(COLOUR_LETTERS)
+    swatch = column - 120
+    top = 650
+    tall = (height - top - 550 - 200) // 2  # each block (greys, browns) as tall as the page allows
+    for i, letter in enumerate(COLOUR_LETTERS):
+        x = 400 + i * column + 60
+        draw.text((x + swatch // 2, top - 120), letter, fill=(30, 30, 30), font=big, anchor="mm")
+        y = top
+        for colours in (GREYS, BROWNS):
+            block = Image.new("RGB", (swatch, tall), "white")
+            bd = ImageDraw.Draw(block)
+            band = block.height // len(colours)
+            for n, colour in enumerate(colours):
+                bd.rectangle((0, n * band, swatch, (n + 1) * band), fill=colour)
+            page.paste(_warmth(block, letter_steps(letter)), (x, y))
+            y += block.height + 200
+    draw.text((width // 2, height - 330), "D = as it is now · A, B, C cooler · E, F, G warmer", fill=(90, 90, 90),
+              font=small, anchor="mm")
+    return page

@@ -138,3 +138,27 @@ def test_print_sheet_window_prints_and_marks(tmp_path):
         assert _wait(lambda: photos.model.item(paths[0]).meta.printed, 10)  # the 🖨 in the grid
     sheet.close()
     win.close()
+
+
+def test_colour_fix_changes_only_greys_and_browns():
+    im = Image.new("RGB", (4, 1))
+    grey, brown, blue, red = (128, 128, 128), (150, 105, 70), (40, 90, 200), (230, 40, 40)
+    for x, colour in enumerate((grey, brown, blue, red)):
+        im.putpixel((x, 0), colour)
+    cooler = print_sheet.colour_fix(im, grey="B", brown="D")
+    g = cooler.getpixel((0, 0))
+    assert g[2] > g[0]  # grey: bluer (less warm)
+    assert cooler.getpixel((1, 0)) == brown  # browns left as they are (D)
+    assert cooler.getpixel((2, 0)) == blue and cooler.getpixel((3, 0)) == red  # other colours untouched
+    warmer = print_sheet.colour_fix(im, grey="D", brown="F").getpixel((1, 0))
+    assert warmer[2] < brown[2]  # brown: warmer
+    assert print_sheet.colour_fix(im) is im  # D, D: nothing done
+
+
+def test_colour_check_page():
+    page = print_sheet.colour_check_page()
+    assert page.size == (6600, 5100)  # landscape 11 × 8.5 in at 600 DPI
+    column = (6600 - 800) // 7
+    a = page.getpixel((400 + 60 + 100, 900))
+    d = page.getpixel((400 + 3 * column + 60 + 100, 900))
+    assert a[2] > a[0] and d[0] == d[1] == d[2]  # A cooler, D a true grey

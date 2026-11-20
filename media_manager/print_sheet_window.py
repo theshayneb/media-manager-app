@@ -13,6 +13,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -149,11 +150,30 @@ class PrintSheetWindow(QDialog):
         self.print_btn = QPushButton("🖨 Print…")
         self.print_btn.setDefault(True)
         self.print_btn.clicked.connect(self.print_sheets)
+        # The printer's colour fix: print the colour check, then pick the column that looked right.
+        self.check_btn = QPushButton("🎨 Colour check")
+        self.check_btn.setToolTip("Print a page of grey and brown swatches (columns A–G) to see which looks right "
+                                  "on your paper")
+        self.check_btn.clicked.connect(self.print_colour_check)
+        self.grey_box, self.brown_box = QComboBox(), QComboBox()
+        for box, value, tip in ((self.grey_box, media.print_grey, "Greys"),
+                                (self.brown_box, media.print_brown, "Browns")):
+            for letter in print_sheet.COLOUR_LETTERS:
+                box.addItem(letter + ("  (as it is)" if letter == "D" else ""), letter)
+            box.setCurrentIndex(max(0, box.findData(value)))
+            box.setToolTip(f"{tip}: the colour check's column that looked right (D = as it is). Used when printing "
+                           "and saving sheets; the screen shows them as they are.")
+        self.grey_box.currentIndexChanged.connect(lambda _i: setattr(media, "print_grey", self.grey_box.currentData()))
+        self.brown_box.currentIndexChanged.connect(
+            lambda _i: setattr(media, "print_brown", self.brown_box.currentData()))
         close = QPushButton("Close")
         close.clicked.connect(self.reject)
         for w in (self.arrange_btn, self.turn_btn, self.prev_btn, self.page_label, self.next_btn, self.used_label):
             bar.addWidget(w)
         bar.addStretch(1)
+        for w in (self.check_btn, QLabel("Greys:"), self.grey_box, QLabel("Browns:"), self.brown_box):
+            bar.addWidget(w)
+        bar.addSpacing(12)
         for w in (self.save_btn, self.print_btn, close):
             bar.addWidget(w)
 
@@ -325,21 +345,17 @@ class PrintSheetWindow(QDialog):
         self.setCursor(Qt.CursorShape.WaitCursor)
         try:
             for n, sheet in enumerate(self.sheets, start=1):
-                saved.append(print_sheet.save(sheet, folder, print_sheet.sheet_name(week, n)))
+                saved.append(print_sheet.save(sheet, folder, print_sheet.sheet_name(week, n),
+                                              self.media.print_grey, self.media.print_brown))
         finally:
             self.unsetCursor()
         self.note.setText("Saved " + ", ".join(os.path.basename(p) for p in saved) + f" in {folder}")
         return saved
 
     def print_sheets(self) -> None:
-        from PySide6.QtGui import QPageSize
-        from PySide6.QtPrintSupport import QPrintDialog, QPrinter
+        from PySide6.QtPrintSupport import QPrintDialog
 
-        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-        printer.setResolution(print_sheet.DPI)
-        printer.setFullPage(True)  # the whole paper: the arrangement is centred on it, at its real size
-        printer.setPageSize(QPageSize(QPageSize.PageSizeId.Letter))
-        printer.setDocName("Print sheet")
+        printer = self._printer("Print sheet")  # the whole paper: the arrangement centred on it, real size
         dialog = QPrintDialog(printer, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -360,7 +376,8 @@ class PrintSheetWindow(QDialog):
                         raise OSError("The printer couldn't start")
                 elif not printer.newPage():
                     raise OSError("The printer couldn't start a new page")
-                image = _qimage(print_sheet.render(sheet))
+                image = _qimage(print_sheet.render(sheet, grey=self.media.print_grey,
+                                                   brown=self.media.print_brown))
                 # The whole paper, in the printer's own pixels: the sheet (8.5 × 11 in) fills it exactly, so every
                 # photo prints at its real size.
                 painter.drawImage(printer.paperRect(QPrinter.Unit.DevicePixel), image)
@@ -374,6 +391,45 @@ class PrintSheetWindow(QDialog):
         self.mark_printed([p.piece.path for s in self.sheets for p in s.placed])
         self.note.setText(f"Sent {len(self.sheets)} sheet{'s' if len(self.sheets) != 1 else ''} to the printer; "
                           "the print copies have a 🖨 now.")
+        return True
+
+    def _printer(self, name: str):  # type: ignore[no-untyped-def]
+        """The printer as Media Manager prints: the whole page, 600 DPI, letter (choose the matte paper and
+        borderless settings in the print dialog, as for Affinity)."""
+        from PySide6.QtGui import QPageSize
+        from PySide6.QtPrintSupport import QPrinter
+
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setResolution(print_sheet.DPI)
+        printer.setFullPage(True)
+        printer.setPageSize(QPageSize(QPageSize.PageSizeId.Letter))
+        printer.setDocName(name)
+        return printer
+
+    def print_colour_check(self) -> None:
+        from PySide6.QtPrintSupport import QPrintDialog
+
+        printer = self._printer("Colour check")
+        if QPrintDialog(printer, self).exec() != QDialog.DialogCode.Accepted:
+            return
+        if self.print_page(printer, print_sheet.colour_check_page(), landscape=True):
+            self.note.setText("Colour check sent. On the paper, find the column whose greys look most like true "
+                              "greys, and the one whose browns look right, and choose those letters here.")
+
+    def print_page(self, printer, image: Image.Image, landscape: bool) -> bool:  # type: ignore[no-untyped-def]
+        from PySide6.QtGui import QPageLayout
+        from PySide6.QtPrintSupport import QPrinter
+
+        printer.setPageOrientation(QPageLayout.Orientation.Landscape if landscape
+                                   else QPageLayout.Orientation.Portrait)
+        painter = QPainter()
+        if not painter.begin(printer):
+            QMessageBox.warning(self, "Print sheet", "The printer couldn't start.")
+            return False
+        try:
+            painter.drawImage(printer.paperRect(QPrinter.Unit.DevicePixel), _qimage(image))
+        finally:
+            painter.end()
         return True
 
     def mark_printed(self, paths: list[str]) -> None:

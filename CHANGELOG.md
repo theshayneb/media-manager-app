@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1
+
+- Print sheet: 🎨 Colour check prints a page of grey and brown swatches in seven columns, A (cooler) … D (as it
+  is) … G (warmer). Choose the column that looked right on your paper for Greys and for Browns (beside it); the
+  sheets then print (and save) with that fix, on greys and browns only. The screen and your print copies stay
+  as they are.
+
 ## 0.7.0
 
 - Photos: 🖨 Print sheet (Shift+S, also right-click). The selected print copies laid out on 8.5 × 11 paper to
