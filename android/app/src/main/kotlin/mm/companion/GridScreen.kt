@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import mm.core.AlbumWeek
 import mm.core.albumWeek
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -75,8 +78,12 @@ fun GridScreen(model: AppModel) {
             LazyVerticalGrid(GridCells.Adaptive(110.dp), Modifier.weight(1f).padding(2.dp),
                 horizontalArrangement = Arrangement.spacedBy(3.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 for ((week, group) in groups) {
-                    item(span = { GridItemSpan(maxLineSpan) }, key = "w${week.year}-${week.number}") { WeekHeader(week, group.size) }
-                    items(group, key = { it.id }) { p -> Tile(model, p) }
+                    val key = "${week.year}-${week.number}"
+                    val shut = key in model.collapsed
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "w$key") {
+                        WeekHeader(week, group.size, shut) { model.toggleWeek(key) }  // tap: fold the week shut / open
+                    }
+                    if (!shut) items(group, key = { it.id }) { p -> Tile(model, p) }
                 }
             }
             if (model.selected.isNotEmpty() && !wide) BottomBar(model)
@@ -87,15 +94,17 @@ fun GridScreen(model: AppModel) {
 private val DAY = DateTimeFormatter.ofPattern("MMM d")
 
 @Composable
-private fun WeekHeader(week: AlbumWeek, count: Int) {
+private fun WeekHeader(week: AlbumWeek, count: Int, shut: Boolean, onToggle: () -> Unit) {
     val sameMonth = week.first.month == week.last.month
     val dates = week.first.format(DAY) + " – " + (if (sameMonth) week.last.dayOfMonth.toString() else week.last.format(DAY)) +
         if (week.year != java.time.LocalDate.now().year) ", ${week.year}" else ""
-    Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.Bottom) {
         Text("Week ${week.number}", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
         Text(dates, fontSize = 13.sp, color = Dim, modifier = Modifier.padding(start = 10.dp, bottom = 3.dp))
         Spacer(Modifier.weight(1f))
         Text("$count", fontSize = 12.sp, color = Dim, modifier = Modifier.padding(bottom = 3.dp))
+        Text(if (shut) "▸" else "▾", fontSize = 14.sp, color = Dim, modifier = Modifier.padding(start = 10.dp, bottom = 2.dp))
     }
 }
 
@@ -181,8 +190,13 @@ private fun Tile(model: AppModel, p: Photo) {
                 modifier = Modifier.align(Alignment.TopStart).padding(3.dp))
         }
         if (f?.edited == true) {
-            Box(Modifier.align(Alignment.BottomEnd).padding(end = 4.dp, bottom = 7.dp).size(16.dp).clip(CircleShape)
-                .background(Color(0x8C000000)), contentAlignment = Alignment.Center) { Text("✨", fontSize = 8.sp) }
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 4.dp, bottom = 7.dp).size(17.dp).clip(CircleShape)
+                .background(Color(0x8C000000)), contentAlignment = Alignment.Center) {
+                // (no font padding, the line exactly the glyph's height: the ✨ sits in the middle of its circle)
+                Text("✨", fontSize = 9.sp, lineHeight = 9.sp, textAlign = TextAlign.Center, style = TextStyle(
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both)))
+            }
         }
         if (p.id in model.waitingIds && !sel) {  // a change not in OneDrive yet
             Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(11.dp).clip(CircleShape).background(Color(0x73000000))

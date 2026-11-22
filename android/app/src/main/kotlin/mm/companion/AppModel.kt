@@ -281,6 +281,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Weeks folded shut in the grid ("2026-46"), remembered between opens. */
+    var collapsed by mutableStateOf(
+        app.getSharedPreferences("grid", 0).getStringSet("collapsed", emptySet())!!.toSet())
+
+    fun toggleWeek(key: String) {
+        collapsed = if (key in collapsed) collapsed - key else collapsed + key
+        app().getSharedPreferences("grid", 0).edit().putStringSet("collapsed", collapsed).apply()
+    }
+
     /** Photos with a change not in OneDrive yet (the yellow dot). */
     var waitingIds by mutableStateOf(emptySet<Long>())
 
