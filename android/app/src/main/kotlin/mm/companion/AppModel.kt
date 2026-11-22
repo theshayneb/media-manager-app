@@ -314,8 +314,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     /** Forget every change still waiting for OneDrive (the phone's photos keep them). */
     fun clearQueue() {
-        queue.remove(queue.all().map { it.id }.toSet())
+        Sync.stop(app())  // a sync running now mustn't write them back
+        queue.clear()
         refreshPending()
+        message = "The list is cleared."
     }
 
     /** Save an edit: the phone's photo now (its original to the Trash), the OneDrive copy queued. */

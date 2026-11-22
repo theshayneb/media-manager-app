@@ -97,6 +97,14 @@ class OneDrive(private val context: Context) {
         if (e.code == 404) null else throw e
     }
 
+    /** A file at this path inside Camera Roll ("2026/11/PXL_….jpg"), or null if there's none. */
+    private fun byPath(path: String): Item? = try {
+        val o = get("/me/drive/special/cameraroll:/${path.split('/').joinToString("/") { enc(it) }}?select=id,name,photo,size,file")
+        if (o.has("file")) item(o) else null
+    } catch (e: GraphError) {
+        if (e.code == 404) null else throw e
+    }
+
     /** Files under Camera Roll (and its folders) whose names start like this. */
     private fun search(text: String): List<Item> {
         val q = text.replace("'", "''")
@@ -110,6 +118,15 @@ class OneDrive(private val context: Context) {
      * the PC with the rename pattern) by the name its date taken gives, checked against the photo's date taken.
      */
     fun find(names: List<String>, taken: LocalDateTime?, patternNames: List<String>): Item? {
+        // Straight to it by name first: in Camera Roll, or its year (and month) folders. OneDrive's search can be
+        // hours or days behind new uploads, so photos that were there were still "waiting for camera upload".
+        val folders = listOfNotNull("", taken?.let { "%04d/%02d".format(it.year, it.monthValue) },
+            taken?.let { "%04d".format(it.year) })
+        for (n in (names + patternNames).filter { it.isNotBlank() }.distinct()) {
+            for (folder in folders) {
+                byPath(if (folder.isEmpty()) n else "$folder/$n")?.let { return it }
+            }
+        }
         for (n in names.filter { it.isNotBlank() }.distinct()) {
             search(n.substringBeforeLast('.')).firstOrNull { it.name.equals(n, true) }?.let { return it }
         }

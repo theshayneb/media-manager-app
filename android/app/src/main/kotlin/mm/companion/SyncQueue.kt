@@ -85,7 +85,10 @@ class SyncQueue(context: Context) {
         })
         val tmp = File(file.parentFile, file.name + ".tmp")
         tmp.writeText(arr.toString())
-        tmp.renameTo(file)
+        if (!tmp.renameTo(file)) {  // (renaming over the old file failed: write it in place)
+            file.writeText(arr.toString())
+            tmp.delete()
+        }
     }
 
     @Synchronized fun add(photoId: Long, name: String, originalName: String, taken: String, change: Change) {
@@ -94,6 +97,12 @@ class SyncQueue(context: Context) {
     }
 
     @Synchronized fun remove(ids: Set<String>) = save(all().filterNot { it.id in ids })
+
+    /** Forget everything waiting. */
+    @Synchronized fun clear() {
+        file.delete()
+        File(file.parentFile, file.name + ".tmp").delete()
+    }
 
     @Synchronized fun setError(ids: Set<String>, error: String) =
         save(all().map { if (it.id in ids) it.copy(error = error) else it })

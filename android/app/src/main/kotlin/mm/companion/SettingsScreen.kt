@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -89,9 +90,15 @@ fun SettingsScreen(model: AppModel) {
                 if (entries.isNotEmpty()) {
                     var sure by remember { mutableStateOf(false) }
                     Spacer(Modifier.width(10.dp))
-                    OutlinedButton(onClick = {
-                        if (sure) { model.clearQueue(); entries = model.queue.all(); sure = false } else sure = true
-                    }, modifier = Modifier.padding(top = 6.dp)) { Text(if (sure) "Sure? Tap again" else "Clear the list") }
+                    OutlinedButton(onClick = { sure = true }, modifier = Modifier.padding(top = 6.dp)) { Text("Clear the list") }
+                    if (sure) AlertDialog(onDismissRequest = { sure = false },
+                        title = { Text("Clear the list?") },
+                        text = { Text("The ${entries.size} waiting change${if (entries.size == 1) "" else "s"} won't be made " +
+                            "to OneDrive's copies. The photos on the phone keep them.") },
+                        confirmButton = { TextButton(onClick = {
+                            model.clearQueue(); entries = model.queue.all(); sure = false
+                        }) { Text("Clear") } },
+                        dismissButton = { TextButton(onClick = { sure = false }) { Text("Cancel") } })
                 }
             }
             if (entries.isNotEmpty()) Text("Clear the list: the phone's photos keep their changes; OneDrive's copies " +

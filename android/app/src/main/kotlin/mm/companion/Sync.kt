@@ -57,6 +57,11 @@ object Sync {
     private const val ONCE = "sync-now"
     private const val HOURLY = "sync-hourly"
 
+    /** Stop a sync that's running or about to (Clear the list). The hourly one carries on. */
+    fun stop(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(ONCE)
+    }
+
     fun schedule(context: Context) {
         val online = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val wm = WorkManager.getInstance(context)
