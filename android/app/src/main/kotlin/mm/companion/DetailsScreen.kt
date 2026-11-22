@@ -77,11 +77,11 @@ fun DetailsScreen(model: AppModel) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DetailsPanel(model: AppModel) {
+fun DetailsPanel(model: AppModel, showNote: Boolean = true) {
     val sel = model.selection
     val fields = sel.map { model.fields[it.id] }
     Column(Modifier.fillMaxSize().background(Panel).verticalScroll(rememberScrollState()).padding(12.dp)) {
-        Note(model)
+        if (showNote) Note(model)
         // ---------------------------------------------------------------- labels
         Section("Labels")
         Row(verticalAlignment = Alignment.CenterVertically) {

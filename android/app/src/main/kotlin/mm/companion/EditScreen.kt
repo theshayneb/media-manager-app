@@ -101,7 +101,7 @@ fun EditScreen(model: AppModel, photo: Photo) {
     var after by remember { mutableStateOf<ImageBitmap?>(null) }
     val values = remember { mutableStateMapOf<String, Int>() }
     val on = remember { mutableStateMapOf<String, Boolean>() }
-    var tab by remember { mutableStateOf(0) }
+    var tab by model::editTab  // (kept when swiping to the next photo)
     var split by remember { mutableFloatStateOf(0f) }
     var holding by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
@@ -137,7 +137,15 @@ fun EditScreen(model: AppModel, photo: Photo) {
         }
     }
 
-    fun leave() { model.screen = Screen.Grid; model.editing = null }
+    fun leave() { model.screen = Screen.Grid; model.editing = null; model.selected.clear() }
+    // The Tags tab works on this photo: it's the selection while the tab is open.
+    LaunchedEffect(tab, photo.id) {
+        if (tab == 3) {
+            model.selected.clear()
+            model.selected[photo.id] = true
+            model.loadFields(photo)
+        }
+    }
     fun moveOn() { pending?.let { model.editing = it } ?: leave(); pending = null }  // next photo, or the grid
     /** Swipe: the next (1) or previous (-1) photo in the folder, asking first if this one was changed. */
     fun go(delta: Int) {
@@ -221,11 +229,15 @@ fun EditScreen(model: AppModel, photo: Photo) {
         }
         Column(Modifier.fillMaxWidth().weight(1f).background(Panel).padding(horizontal = 12.dp)) {
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for ((i, t) in listOf("Light", "Detail", "Colour").withIndex()) {
+                for ((i, t) in listOf("Light", "Detail", "Colour", "Tags").withIndex()) {
                     Text(t, fontSize = 13.sp, modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
                         .background(if (tab == i) Accent else Color(0xFF33363C)).clickable { tab = i }
                         .padding(vertical = 7.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
+            }
+            if (tab == 3) {  // Tags: label, keywords, date taken, rename (for this photo, done at once)
+                Box(Modifier.weight(1f)) { DetailsPanel(model, showNote = false) }
+                return@Column
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 fun autoOne(key: String) {

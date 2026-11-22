@@ -39,6 +39,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val fields = mutableStateMapOf<Long, XmpFields>()
     val selected = mutableStateMapOf<Long, Boolean>()
     var editing by mutableStateOf<Photo?>(null)
+    var editTab by mutableStateOf(0)  // the Edit screen's tab: Light, Detail, Colour, Tags (kept when swiping)
     var message by mutableStateOf("")
     var pending by mutableStateOf(0)
     var busy by mutableStateOf(false)
@@ -162,7 +163,18 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         selected.clear()
         viewModelScope.launch {
             photos = if (f == null) emptyList() else withContext(Dispatchers.IO) { store.photos(f.id) }
+            // Editing a photo that was just renamed (its Tags tab): the same photo, its new name and path.
+            val e = editing
+            if (screen == Screen.Edit && e != null) {
+                photos.firstOrNull { it.id == e.id }?.let { editing = it; if (editTab == 3) selected[it.id] = true }
+            }
         }
+    }
+
+    /** A photo's tags read now (if the grid hasn't yet). */
+    fun loadFields(p: Photo) {
+        if (p.id in fields) return
+        viewModelScope.launch { fields[p.id] = withContext(Dispatchers.IO) { store.fields(p) } }
     }
 
     suspend fun thumbnail(p: Photo): Bitmap? {
