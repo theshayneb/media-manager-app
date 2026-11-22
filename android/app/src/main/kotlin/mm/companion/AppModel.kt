@@ -45,6 +45,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var message by mutableStateOf("")
     var pending by mutableStateOf(0)
     var busy by mutableStateOf(false)
+    /** Goes up after every change, so what's shown from the files (date taken, Rename's new names) is read again. */
+    var changes by mutableStateOf(0)
     var lastEdit by mutableStateOf<Map<String, Int>>(emptyMap())
 
     private val thumbs = object : android.util.LruCache<Long, Bitmap>(64 * 1024 * 1024) {
@@ -480,6 +482,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     private fun finish(done: Int, problems: List<String>, skipped: Int = 0) {
         busy = false
+        changes++
         refreshPending()
         Sync.schedule(app())
         message = buildString {

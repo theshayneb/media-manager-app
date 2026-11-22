@@ -1,6 +1,8 @@
 package mm.companion
 
 import android.content.Context
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -272,11 +274,9 @@ class OneDrive(private val context: Context) {
     private fun get(path: String) = JSONObject(String(request("GET", "$GRAPH$path", null, null).second))
 
     private fun request(method: String, url: String, body: ByteArray?, type: String?): Pair<Int, ByteArray> {
+        if (method == "PATCH") return patch(url, body ?: ByteArray(0), type ?: "application/json")
         val conn = URL(url).openConnection() as HttpURLConnection
-        if (method == "PATCH") {
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("X-HTTP-Method-Override", "PATCH")
-        } else conn.requestMethod = method
+        conn.requestMethod = method
         conn.setRequestProperty("Authorization", "Bearer ${token()}")
         conn.instanceFollowRedirects = true
         conn.connectTimeout = 30_000
@@ -292,6 +292,24 @@ class OneDrive(private val context: Context) {
         val bytes = stream?.use { s -> ByteArrayOutputStream().also { s.copyTo(it) }.toByteArray() } ?: ByteArray(0)
         if (code !in 200..299) throw GraphError(code, String(bytes))
         return code to bytes
+    }
+
+    /** A real PATCH (OneDrive refuses a POST that says it's one: "Invalid request"). */
+    private fun patch(url: String, body: ByteArray, type: String): Pair<Int, ByteArray> {
+        val request = okhttp3.Request.Builder().url(url)
+            .header("Authorization", "Bearer ${token()}")
+            .patch(body.toRequestBody(type.toMediaType()))
+            .build()
+        http.newCall(request).execute().use { r ->
+            val bytes = r.body?.bytes() ?: ByteArray(0)
+            if (!r.isSuccessful) throw GraphError(r.code, String(bytes))
+            return r.code to bytes
+        }
+    }
+
+    private val http by lazy {
+        okhttp3.OkHttpClient.Builder().connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS).build()
     }
 
     private fun postForm(url: String, form: Map<String, String>): JSONObject {

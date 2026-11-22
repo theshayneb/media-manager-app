@@ -138,7 +138,7 @@ fun DetailsPanel(model: AppModel, showNote: Boolean = true) {
         }
         // ---------------------------------------------------------------- date taken
         Section("Date taken")
-        val dates = remember(sel, model.message) { sel.map { model.dateTaken(it) } }
+        val dates = remember(sel, model.message, model.changes) { sel.map { model.dateTaken(it) } }
         val known = dates.filterNotNull()
         Text(when {
             sel.isEmpty() -> ""
@@ -161,7 +161,7 @@ fun DetailsPanel(model: AppModel, showNote: Boolean = true) {
         // ---------------------------------------------------------------- rename
         Section("Rename")
         Text(model.shared.renamePattern, color = Dim, fontSize = 12.sp)
-        val plan = remember(sel, model.message) { model.renamePreview() }
+        val plan = remember(sel, model.message, model.changes) { model.renamePreview() }
         val changing = plan.filter { it.second != null }
         for ((p, name) in changing.take(3)) Text("${p.name} → $name", fontSize = 12.sp)
         if (changing.size > 3) Text("… and ${changing.size - 3} more", fontSize = 12.sp, color = Dim)
