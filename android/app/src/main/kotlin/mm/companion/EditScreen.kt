@@ -302,6 +302,7 @@ private fun fitRatio(box: List<Double>, ratio: Float?, photo: ImageBitmap?): Lis
     return listOf(nl, nt, nl + fw, nt + fh)
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun SliderRow(name: String, value: Int, enabled: Boolean, colours: List<Color>, min: Float,
                       onValue: (Int) -> Unit, onEnabled: (Boolean) -> Unit, onAuto: (() -> Unit)?) {
