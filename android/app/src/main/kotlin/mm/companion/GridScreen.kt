@@ -130,6 +130,7 @@ private fun TopBar(model: AppModel) {
         }
         Spacer(Modifier.weight(1f))
         if (model.pending > 0) Text("⟳ ${model.pending} to sync", color = Dim, fontSize = 12.sp)
+        TextButton(onClick = { model.refresh() }) { Text("⟳", color = Color.White, fontSize = 18.sp) }
         TextButton(onClick = { model.screen = Screen.Settings }) { Text("⚙", color = Color.White, fontSize = 18.sp) }
     }
 }

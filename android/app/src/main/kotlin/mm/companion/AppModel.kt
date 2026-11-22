@@ -194,6 +194,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         open(keep ?: list.firstOrNull { it.name.equals("Camera", true) } ?: list.firstOrNull())
     }
 
+    /** ⟳: the folders and photos read again (phone or OneDrive), with fresh thumbnails and tags, and a sync. */
+    fun refresh() {
+        thumbs.evictAll()
+        fields.clear()
+        message = if (inCloud && !cloud.online()) "OneDrive: ${cloud.whyOffline()} (showing what was last seen)" else ""
+        reload()
+        syncNow()
+    }
+
     /** OneDrive's list, with what's still waiting to be done there: renamed, and deleted ones gone. */
     private fun withQueued(list: List<Photo>): List<Photo> {
         val waiting = queue.all().groupBy { it.photoId }
