@@ -5,6 +5,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -171,37 +176,38 @@ fun EditScreen(model: AppModel, photo: Photo) {
         })
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().background(Panel).padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            val tight = PaddingValues(horizontal = 8.dp)  // (seven buttons share a phone's width)
-            TextButton(onClick = { if (changed()) asking = true else leave() }, contentPadding = tight) {
-                Text("←", color = Color.White, fontSize = 20.sp)
-            }
-            TextButton(onClick = {
-                cropping = !cropping
-                if (cropping && crop == null) crop = listOf(0.05, 0.05, 0.95, 0.95)
-            }, contentPadding = tight) { Text(if (cropping) "✓ Done" else "✂ Crop", color = Color.White) }
-            if (!cropping) {
+        // Back | crop, rotate, flip, full screen, delete | Save  (line icons; long-press one for its name)
+        Row(Modifier.fillMaxWidth().background(Background).padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Tool(Line.Back, "Back") { if (changed()) asking = true else leave() }
+            Spacer(Modifier.weight(1f))
+            if (cropping) {
+                TextButton(onClick = { cropping = false }) { Text("Done", color = Color.White, fontWeight = FontWeight.SemiBold) }
+            } else {
+                Tool(Line.Crop, "Crop") { cropping = true; if (crop == null) crop = listOf(0.05, 0.05, 0.95, 0.95) }
+                Tool(Line.Rotate, "Rotate") { setTurn(turn.rotated()) }
                 Box {
-                    TextButton(onClick = { flipMenu = true }, contentPadding = tight) { Text("⇋ Flip", color = Color.White) }
+                    Tool(Line.Flip, "Flip") { flipMenu = true }
                     DropdownMenu(flipMenu, { flipMenu = false }) {
                         DropdownMenuItem(text = { Text("Flip horizontal") }, onClick = { flipMenu = false; setTurn(turn.flipped()) })
                         DropdownMenuItem(text = { Text("Flip vertical") }, onClick = { flipMenu = false; setTurn(turn.flipped(vertical = true)) })
                     }
                 }
-                TextButton(onClick = { setTurn(turn.rotated()) }, contentPadding = tight) { Text("↻", color = Color.White, fontSize = 20.sp) }
-                // Delete: Android asks "Move to Trash?"; then the next photo (or the one before), else the grid.
-                TextButton(onClick = {
+                Tool(if (full) Line.ExitFullScreen else Line.FullScreen, if (full) "Show the sliders" else "Full screen") { full = !full }
+                // Delete: then the next photo (or the one before), else the grid.
+                Tool(Line.Delete, "Delete") {
                     val next = model.neighbour(photo, 1) ?: model.neighbour(photo, -1)
                     model.delete(listOf(photo)) { if (next != null) model.editing = next else leave() }
-                }, contentPadding = tight) { Text("🗑", fontSize = 18.sp) }
-                TextButton(onClick = { full = !full }, contentPadding = tight) {
-                    Text(if (full) "⊟" else "⛶", color = Color.White, fontSize = 20.sp)
                 }
             }
-            Box(Modifier.weight(1f))
-            Button(onClick = { model.saveEdit(photo, adjustments(), crop, turn) { leave() } }, enabled = changed() && !model.busy) {
-                if (model.busy) CircularProgressIndicator(Modifier.width(18.dp).height(18.dp), strokeWidth = 2.dp) else Text("Save")
-            }
+            Spacer(Modifier.weight(1f))
+            val canSave = changed() && !model.busy
+            Text(if (model.busy) "Saving…" else "Save", fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                color = if (canSave) Color.White else Color(0xFF7D8188),
+                modifier = Modifier.padding(end = 4.dp).clip(RoundedCornerShape(18.dp))
+                    .background(if (canSave) Accent else ChipColour)
+                    .clickable(enabled = canSave) { model.saveEdit(photo, adjustments(), crop, turn) { leave() } }
+                    .padding(horizontal = 18.dp, vertical = 8.dp))
         }
         if (!full) Note(model)
         val img = after
@@ -235,13 +241,17 @@ fun EditScreen(model: AppModel, photo: Photo) {
             return@Column
         }
         Column(Modifier.fillMaxWidth().weight(1f).background(Panel).padding(horizontal = 12.dp)) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // the tabs: text, the chosen one underlined
+            Row(Modifier.fillMaxWidth()) {
                 for ((i, t) in listOf("Light", "Detail", "Colour", "Tags").withIndex()) {
-                    Text(t, fontSize = 13.sp, modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
-                        .background(if (tab == i) Accent else Color(0xFF33363C)).clickable { tab = i }
-                        .padding(vertical = 7.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Column(Modifier.weight(1f).clickable { tab = i }, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(t, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (tab == i) Color.White else Color(0xFF8F939A),
+                            modifier = Modifier.padding(top = 11.dp, bottom = 8.dp))
+                        Box(Modifier.fillMaxWidth().height(2.5.dp).background(if (tab == i) Accent else Color.Transparent))
+                    }
                 }
             }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(LineColour))
             if (tab == 3) {  // Tags: label, keywords, date taken, rename (for this photo, done at once)
                 Box(Modifier.weight(1f)) { DetailsPanel(model, showNote = false) }
                 return@Column
@@ -449,4 +459,15 @@ private fun keepRatio(box: List<Double>, ratio: Float?, rect: Rect, corner: Int)
     if (corner < 2) t = b - hFrac else b = t + hFrac
     if (t < 0 || b > 1) return box
     return listOf(l, t, r, b)
+}
+
+/** A toolbar icon; long-press shows its name. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun Tool(icon: androidx.compose.ui.graphics.vector.ImageVector, name: String, onClick: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Box(Modifier.size(42.dp).clip(CircleShape)
+        .combinedClickable(onClick = onClick,
+            onLongClick = { android.widget.Toast.makeText(context, name, android.widget.Toast.LENGTH_SHORT).show() }),
+        contentAlignment = Alignment.Center) { LineIcon(icon, name) }
 }

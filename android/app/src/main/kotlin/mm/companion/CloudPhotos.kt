@@ -153,6 +153,11 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
         return BitmapFactory.decodeFile(t.path)
     }
 
+    /** Any small picture of this OneDrive file kept on the phone (for the Sync list). */
+    fun anyThumbnail(item: String): Bitmap? =
+        File(dir, "thumbs").listFiles { f -> f.name.startsWith("$item-") }?.maxByOrNull { it.lastModified() }
+            ?.let { BitmapFactory.decodeFile(it.path) }
+
     private fun thumbFile(p: Photo) = File(dir, "thumbs/${p.cloudId}-${File(p.path).nameWithoutExtension}.jpg")
 
     /** The tags, from the start of the file in OneDrive (not downloaded yet). */

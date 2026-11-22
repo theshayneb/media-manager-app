@@ -42,6 +42,9 @@ val Background = Color(0xFF1E2023)
 val Panel = Color(0xFF26282C)
 val Accent = Color(0xFF3B6FC4)
 val Dim = Color(0xFF9AA0A8)
+val Waiting = Color(0xFFE2B04A)   // a change not in OneDrive yet
+val ChipColour = Color(0xFF2E3238)
+val LineColour = Color(0xFF34383F)
 val LabelColours = mapOf("Red" to Color(0xFFE04848), "Yellow" to Color(0xFFE8C020), "Green" to Color(0xFF30A050),
     "Blue" to Color(0xFF3B78D8), "Purple" to Color(0xFF9050D0))
 

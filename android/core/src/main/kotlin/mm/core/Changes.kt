@@ -83,3 +83,16 @@ fun markEdited(bytes: ByteArray): ByteArray {
     jpeg.xmp = xmp.serialize()
     return jpeg.toBytes()
 }
+
+/** What a photo's tags will be after a change (for a OneDrive photo whose file isn't on the phone yet). */
+fun XmpFields.applying(change: Change): XmpFields = when (change) {
+    is Change.Keywords -> {
+        val gone = change.remove.map { it.lowercase() }.toSet()
+        val kept = keywords.filter { it.lowercase() !in gone }
+        copy(keywords = kept + change.add.filter { a -> kept.none { it.equals(a, true) } }.distinctBy { it.lowercase() })
+    }
+    is Change.Label -> copy(label = change.label)
+    is Change.Flag -> if (change.flag == "Star") copy(rating = if (change.on) 5 else 0) else copy(bookmarked = change.on)
+    Change.ClearLabels -> copy(label = "", rating = 0, bookmarked = false)
+    else -> this
+}

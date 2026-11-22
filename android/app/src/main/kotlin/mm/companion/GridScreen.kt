@@ -17,6 +17,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import mm.core.AlbumWeek
+import mm.core.albumWeek
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -43,13 +49,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.temporal.TemporalAdjusters
 
-private val WEEK = DateTimeFormatter.ofPattern("MMM d, yyyy")
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -62,20 +65,17 @@ fun GridScreen(model: AppModel) {
         Column(Modifier.weight(1f)) {
             TopBar(model)
             Note(model)
+            // The album's weeks, numbered as on the PC (Week 1 starts January 1).
             val groups = remember(model.photos) {
                 model.photos.groupBy {
-                    Instant.ofEpochMilli(if (it.takenMillis > 0) it.takenMillis else it.modified * 1000)
-                        .atZone(ZoneId.systemDefault()).toLocalDate()
-                        .with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
+                    albumWeek(Instant.ofEpochMilli(if (it.takenMillis > 0) it.takenMillis else it.modified * 1000)
+                        .atZone(ZoneId.systemDefault()).toLocalDate())
                 }
             }
             LazyVerticalGrid(GridCells.Adaptive(110.dp), Modifier.weight(1f).padding(2.dp),
                 horizontalArrangement = Arrangement.spacedBy(3.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 for ((week, group) in groups) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Text("Week of ${week.format(WEEK)} · ${group.size}", color = Dim, fontSize = 13.sp,
-                            modifier = Modifier.padding(6.dp, 10.dp, 6.dp, 4.dp))
-                    }
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "w${week.year}-${week.number}") { WeekHeader(week, group.size) }
                     items(group, key = { it.id }) { p -> Tile(model, p) }
                 }
             }
@@ -84,54 +84,77 @@ fun GridScreen(model: AppModel) {
     }
 }
 
+private val DAY = DateTimeFormatter.ofPattern("MMM d")
+
+@Composable
+private fun WeekHeader(week: AlbumWeek, count: Int) {
+    val sameMonth = week.first.month == week.last.month
+    val dates = week.first.format(DAY) + " – " + (if (sameMonth) week.last.dayOfMonth.toString() else week.last.format(DAY)) +
+        if (week.year != java.time.LocalDate.now().year) ", ${week.year}" else ""
+    Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.Bottom) {
+        Text("Week ${week.number}", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+        Text(dates, fontSize = 13.sp, color = Dim, modifier = Modifier.padding(start = 10.dp, bottom = 3.dp))
+        Spacer(Modifier.weight(1f))
+        Text("$count", fontSize = 12.sp, color = Dim, modifier = Modifier.padding(bottom = 3.dp))
+    }
+}
+
 @Composable
 private fun TopBar(model: AppModel) {
     var open by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().background(Panel).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (model.selected.isNotEmpty()) {
-            TextButton(onClick = { model.selected.clear() }) { Text("✕  ${model.selected.size} selected", color = Color.White) }
-        } else {
-            Box {
-                val icon = if (model.inCloud) "☁" else "📂"
-                TextButton(onClick = { open = true }) {
-                    Text("$icon ${model.folder?.name?.removePrefix("Camera Roll › ") ?: "No photos"} ▾", color = Color.White, fontSize = 17.sp)
-                }
-                DropdownMenu(open, { open = false }) {
-                    // 📱 the phone's folders, or ☁ OneDrive's Camera Roll
-                    Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                        for ((cloud, text) in listOf(false to "📱 Phone", true to "☁ OneDrive")) {
-                            val on = model.inCloud == cloud
-                            Text(text, color = if (on) Color.White else Dim, fontSize = 15.sp,
-                                modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(16.dp))
-                                    .background(if (on) Accent else Color(0xFF3A3D42))
-                                    .clickable { model.useCloud(cloud); if (!cloud || model.signedIn) open = false }
-                                    .padding(horizontal = 14.dp, vertical = 6.dp))
+    Column(Modifier.fillMaxWidth().background(Background)) {
+        Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 4.dp, top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (model.selected.isNotEmpty()) {
+                TextButton(onClick = { model.selected.clear() }) { Text("✕  ${model.selected.size} selected", color = Color.White, fontSize = 18.sp) }
+            } else {
+                Box {
+                    Column(Modifier.clip(RoundedCornerShape(10.dp)).clickable { open = true }.padding(horizontal = 10.dp, vertical = 4.dp)) {
+                        Text("${model.folder?.name?.removePrefix("Camera Roll › ") ?: "No photos"} ▾", color = Color.White,
+                            fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Row {
+                            val n = model.photos.size
+                            Text("${if (model.inCloud) "OneDrive" else "Phone"}, ${"%,d".format(n)} photo${if (n == 1) "" else "s"}",
+                                color = Dim, fontSize = 12.5.sp)
+                            if (model.pending > 0) Text(", ${model.pending} change${if (model.pending == 1) "" else "s"} to sync",
+                                color = Waiting, fontSize = 12.5.sp)
                         }
                     }
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    val favs = model.folders.count { model.isFavorite(it) }
-                    if (favs > 0) Text("★ FAVOURITES", color = Dim, fontSize = 12.sp,
-                        modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp))
-                    model.folders.forEachIndexed { i, f ->
-                        if (favs > 0 && i == favs) HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                        val fav = model.isFavorite(f)
-                        DropdownMenuItem(
-                            text = { Text("${f.name}  (${"%,d".format(f.count)})") },
-                            onClick = { open = false; model.open(f) },
-                            trailingIcon = if (f.inCloud) null else { {
-                                Text(if (fav) "★" else "☆", fontSize = 22.sp, color = if (fav) Color(0xFFE8C020) else Dim,
-                                    modifier = Modifier.clip(CircleShape).clickable { model.toggleFavorite(f) }
-                                        .padding(horizontal = 10.dp, vertical = 4.dp))
-                            } },
-                        )
+                    DropdownMenu(open, { open = false }) {
+                        val favs = model.folders.count { model.isFavorite(it) }
+                        if (favs > 0) Text("Favourites", color = Dim, fontSize = 12.sp,
+                            modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp))
+                        model.folders.forEachIndexed { i, f ->
+                            if (favs > 0 && i == favs) HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                            val fav = model.isFavorite(f)
+                            DropdownMenuItem(
+                                text = { Text("${f.name}  (${"%,d".format(f.count)})") },
+                                onClick = { open = false; model.open(f) },
+                                trailingIcon = if (f.inCloud) null else { {
+                                    Text(if (fav) "★" else "☆", fontSize = 22.sp, color = if (fav) Color(0xFFE8C020) else Dim,
+                                        modifier = Modifier.clip(CircleShape).clickable { model.toggleFavorite(f) }
+                                            .padding(horizontal = 10.dp, vertical = 4.dp))
+                                } },
+                            )
+                        }
                     }
                 }
             }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { model.refresh() }) { LineIcon(Line.Refresh, "Refresh") }
+            IconButton(onClick = { model.screen = Screen.Settings }) { LineIcon(Line.Settings, "Settings") }
         }
-        Spacer(Modifier.weight(1f))
-        if (model.pending > 0) Text("⟳ ${model.pending} to sync", color = Dim, fontSize = 12.sp)
-        TextButton(onClick = { model.refresh() }) { Text("⟳", color = Color.White, fontSize = 18.sp) }
-        TextButton(onClick = { model.screen = Screen.Settings }) { Text("⚙", color = Color.White, fontSize = 18.sp) }
+        // 📱 the phone's folders, or ☁ OneDrive's Camera Roll: always in sight
+        if (model.selected.isEmpty()) Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 6.dp)
+            .clip(RoundedCornerShape(10.dp)).background(ChipColour).padding(3.dp)) {
+            for ((cloud, text) in listOf(false to "Phone", true to "OneDrive")) {
+                val on = model.inCloud == cloud
+                Text(text, color = if (on) Color.White else Dim, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                        .background(if (on) Color(0xFF3E434B) else Color.Transparent)
+                        .clickable { model.useCloud(cloud) }.padding(vertical = 7.dp))
+            }
+        }
     }
 }
 
@@ -151,15 +174,19 @@ private fun Tile(model: AppModel, p: Photo) {
             onLongClick = { model.selected[p.id] = true },
         )) {
         bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-        LabelColours[f?.label]?.let { Box(Modifier.fillMaxSize().border(3.dp, it)) }
+        // a label: a strip along the bottom edge (covers less of the photo than a frame)
+        LabelColours[f?.label]?.let { Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp).background(it)) }
         if (f != null && (f.starred || f.bookmarked)) {
-            Text((if (f.starred) "⭐" else "") + (if (f.bookmarked) "🔖" else ""), fontSize = 11.sp,
-                modifier = Modifier.align(Alignment.TopStart).padding(3.dp).clip(RoundedCornerShape(10.dp))
-                    .background(Color(0x8C000000)).padding(horizontal = 4.dp, vertical = 1.dp))
+            Text((if (f.starred) "⭐" else "") + (if (f.bookmarked) "🔖" else ""), fontSize = 10.sp,
+                modifier = Modifier.align(Alignment.TopStart).padding(3.dp))
         }
         if (f?.edited == true) {
-            Text("✨", fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp).clip(CircleShape)
-                .background(Color(0x8C000000)).padding(3.dp))
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 4.dp, bottom = 7.dp).size(16.dp).clip(CircleShape)
+                .background(Color(0x8C000000)), contentAlignment = Alignment.Center) { Text("✨", fontSize = 8.sp) }
+        }
+        if (p.id in model.waitingIds && !sel) {  // a change not in OneDrive yet
+            Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(11.dp).clip(CircleShape).background(Color(0x73000000))
+                .padding(1.5.dp).clip(CircleShape).background(Waiting))
         }
         if (sel) {
             Box(Modifier.fillMaxSize().border(3.dp, Accent))

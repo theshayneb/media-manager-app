@@ -19,6 +19,7 @@ import mm.core.Adjustments
 import mm.core.Change
 import mm.core.XmpFields
 import mm.core.applyTags
+import mm.core.applying
 import mm.core.matchAny
 import mm.core.renamePlan
 import java.io.File
@@ -280,7 +281,26 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun refreshPending() { pending = queue.all().size }
+    /** Photos with a change not in OneDrive yet (the yellow dot). */
+    var waitingIds by mutableStateOf(emptySet<Long>())
+
+    /** A small picture for the Sync list, by the queued photo id (a phone photo, or a OneDrive one). */
+    suspend fun queuedThumbnail(photoId: Long): Bitmap? = withContext(Dispatchers.IO) {
+        thumbs.get(photoId)?.let { return@withContext it }
+        if (photoId >= 0) {
+            runCatching { app().contentResolver.loadThumbnail(
+                android.content.ContentUris.withAppendedId(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, photoId),
+                android.util.Size(160, 160), null) }.getOrNull()
+        } else {
+            app().getSharedPreferences("onedrive-items", 0).getString(photoId.toString(), null)?.let { cloud.anyThumbnail(it) }
+        }
+    }
+
+    fun refreshPending() {
+        val all = queue.all()
+        pending = all.size
+        waitingIds = all.map { it.photoId }.toSet()
+    }
 
     val selection: List<Photo> get() = photos.filter { selected[it.id] == true }
 
@@ -322,7 +342,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                         val taken = store.dateTaken(p)?.format(EXIF_DATE) ?: ""
                         if (!local(p)) {
                             // A OneDrive photo with no connection: done there once online.
-                            record(p, change, taken = taken); queuedOnly++; done++; continue
+                            record(p, change, taken = taken); queuedOnly++; done++
+                            fields[p.id]?.let { fields[p.id] = it.applying(change) }  // shown at once
+                            continue
                         }
                         if (change.isTag) {
                             store.write(p, applyTags(store.read(p), change))
