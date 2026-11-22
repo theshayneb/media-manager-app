@@ -77,7 +77,9 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
         val entries: JSONArray = if (online) {
             val a = JSONArray()
             drive.children(id).filter { !it.folder && it.mime.startsWith("image/") }.forEach { e ->
-                a.put(JSONObject().put("id", e.id).put("name", e.name).put("mime", e.mime).put("taken", e.taken ?: "")
+                // OneDrive hasn't read a date taken from it (yet; e.g. just changed): read it from the file.
+                val taken = e.taken ?: runCatching { exifDate(drive.head(e.id, 128 * 1024))?.toString() }.getOrNull()
+                a.put(JSONObject().put("id", e.id).put("name", e.name).put("mime", e.mime).put("taken", taken ?: "")
                     .put("modified", e.modified).put("tag", e.tag))
             }
             saved.writeText(a.toString())
@@ -90,8 +92,12 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
             val item = o.getString("id")
             val name = o.getString("name")
             val modified = runCatching { Instant.parse(o.getString("modified")).epochSecond }.getOrDefault(0L)
-            Photo(cloudPhotoId(item), file(item, o.getString("tag"), name).path, name,
-                wallTime(o.optString("taken"))?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: 0L,
+            val copy = file(item, o.getString("tag"), name)
+            // The phone's copy's own date first (changed here, maybe not in OneDrive yet), then OneDrive's.
+            val taken = (if (copy.exists()) runCatching { exifDate(copy.readBytes(128 * 1024)) }.getOrNull() else null)
+                ?: wallTime(o.optString("taken"))
+            Photo(cloudPhotoId(item), copy.path, name,
+                taken?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: 0L,
                 modified, o.getString("mime"), cloudId = item)
         }.sortedByDescending { if (it.takenMillis > 0) it.takenMillis else it.modified * 1000 }
     }
@@ -100,6 +106,19 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
      *  and changes made here stay in this one until they're uploaded). */
     private fun file(item: String, tag: String, name: String): File =
         File(dir, "photos/$item/${fnv(tag).toULong().toString(16)}.${name.substringAfterLast('.', "jpg").lowercase()}")
+
+    private fun File.readBytes(n: Int): ByteArray = inputStream().use { it.readNBytesCompat(n) }
+
+    private fun java.io.InputStream.readNBytesCompat(n: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(16 * 1024)
+        while (out.size() < n) {
+            val r = read(buf, 0, minOf(buf.size, n - out.size()))
+            if (r < 0) break
+            out.write(buf, 0, r)
+        }
+        return out.toByteArray()
+    }
 
     fun isLocal(p: Photo) = File(p.path).exists()
 
@@ -156,6 +175,14 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
         }
 
         /** OneDrive's date taken is the camera's clock time (marked as UTC). */
+        /** The EXIF date taken in the start of a JPEG/PNG file. */
+        fun exifDate(head: ByteArray): LocalDateTime? {
+            val exif = androidx.exifinterface.media.ExifInterface(java.io.ByteArrayInputStream(head))
+            val text = exif.getAttribute(androidx.exifinterface.media.ExifInterface.TAG_DATETIME_ORIGINAL)
+                ?: exif.getAttribute(androidx.exifinterface.media.ExifInterface.TAG_DATETIME_DIGITIZED) ?: return null
+            return runCatching { LocalDateTime.parse(text.trim(), EXIF_DATE) }.getOrNull()
+        }
+
         fun wallTime(text: String?): LocalDateTime? = text?.takeIf { it.isNotEmpty() }?.let {
             runCatching { LocalDateTime.parse(it.removeSuffix("Z").substringBefore('+').take(19)) }.getOrNull()
         }

@@ -209,16 +209,36 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         return list.mapNotNull { p ->
             val es = waiting[p.id] ?: return@mapNotNull p
             if (es.any { it.change == Change.Delete }) return@mapNotNull null
-            (es.lastOrNull { it.change is Change.Rename }?.change as Change.Rename?)?.let { p.copy(name = it.name) } ?: p
+            var q = p
+            (es.lastOrNull { it.change is Change.Rename }?.change as Change.Rename?)?.let { q = q.copy(name = it.name) }
+            if (!cloud.isLocal(p)) {  // (a downloaded copy already has its new date)
+                (es.lastOrNull { it.change is Change.DateTaken }?.change as Change.DateTaken?)?.let { d ->
+                    runCatching { LocalDateTime.parse(d.exif, EXIF_DATE) }.getOrNull()?.let {
+                        q = q.copy(takenMillis = it.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())
+                    }
+                }
+            }
+            q
+        }.sortedByDescending { if (it.takenMillis > 0) it.takenMillis else it.modified * 1000 }
+    }
+
+    /** The folder's photos read again, keeping what's selected (a date changed: it may be in another week now). */
+    private fun relist() {
+        val f = folder ?: return
+        viewModelScope.launch {
+            val list = listPhotos(f, quiet = true)
+            if (folder?.id != f.id) return@launch
+            photos = list
+            editing?.let { e -> list.firstOrNull { it.id == e.id }?.let { editing = it } }
         }
     }
 
-    private suspend fun listPhotos(f: Folder): List<Photo> = withContext(Dispatchers.IO) {
+    private suspend fun listPhotos(f: Folder, quiet: Boolean = false): List<Photo> = withContext(Dispatchers.IO) {
         if (!f.inCloud) return@withContext store.photos(f.id)
-        val online = cloud.online()
+        val online = cloud.online() && !quiet  // (quiet: as last listed, with the changes made here)
         val listed = runCatching { cloud.photos(f, online) }
             .recoverCatching { if (online) cloud.photos(f, false) else throw it }  // (as last seen)
-        listed.exceptionOrNull()?.let { withContext(Dispatchers.Main) { message = "OneDrive: ${it.message}" } }
+        if (!quiet) listed.exceptionOrNull()?.let { withContext(Dispatchers.Main) { message = "OneDrive: ${it.message}" } }
         withQueued(listed.getOrDefault(emptyList()))
     }
 
@@ -318,6 +338,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             finish(done, problems)
+            if (change is Change.DateTaken) relist()
             if (queuedOnly > 0) message += " · $queuedOnly will be done in OneDrive once online"
         }
     }
@@ -340,6 +361,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             finish(found.size - problems.size, problems, skipped = targets.size - found.size)
+            relist()
         }
     }
 
