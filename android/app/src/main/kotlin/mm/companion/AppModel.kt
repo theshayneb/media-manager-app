@@ -169,7 +169,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         reload()
     }
 
-    fun setWifiOnly(on: Boolean) {
+    fun changeWifiOnly(on: Boolean) {
         cloud.wifiOnly = on
         wifiOnly = on
         Sync.schedule(app())

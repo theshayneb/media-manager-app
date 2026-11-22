@@ -84,7 +84,7 @@ fun SettingsScreen(model: AppModel) {
                     Text("Browse, download and sync OneDrive photos only on Wi-Fi (not on mobile data). Changes wait " +
                         "until you're on Wi-Fi.", color = Dim, fontSize = 12.sp)
                 }
-                Switch(model.wifiOnly, { model.setWifiOnly(it) })
+                Switch(model.wifiOnly, { model.changeWifiOnly(it) })
             }
 
             Title("Sync")
