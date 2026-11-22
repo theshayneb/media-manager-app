@@ -137,7 +137,10 @@ fun EditScreen(model: AppModel, photo: Photo) {
         }
     }
 
-    fun leave() { model.screen = Screen.Grid; model.editing = null; model.selected.clear() }
+    fun leave() {
+        model.screen = Screen.Grid; model.editing = null; model.selected.clear()
+        model.editZoom = 1f; model.editPan = Offset.Zero  // next time Edit opens, fitted
+    }
     // The Tags tab works on this photo: it's the selection while the tab is open.
     LaunchedEffect(tab, photo.id) {
         if (tab == 3) {
@@ -201,7 +204,7 @@ fun EditScreen(model: AppModel, photo: Photo) {
         val img = after
         val before = turnedBefore ?: preview?.asImageBitmap()
         Box(Modifier.fillMaxWidth().weight(1f).background(Color(0xFF1B1C1F))) {
-            if (img != null && before != null) PhotoView(img, before, split, holding, picking, cropping, crop, ratio,
+            if (img != null && before != null) PhotoView(model, img, before, split, holding, picking, cropping, crop, ratio,
                 onSplit = { split = it }, onHold = { holding = it }, onCrop = { crop = it },
                 onPick = { fx, fy ->
                     val p = pixels?.let { turn.apply(it) } ?: return@PhotoView  // tapped on the photo as it's shown
@@ -312,13 +315,13 @@ private fun SliderRow(name: String, value: Int, enabled: Boolean, colours: List<
  * while cropping, drag the box or its corners.
  */
 @Composable
-private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, holding: Boolean, picking: Boolean,
+private fun PhotoView(model: AppModel, after: ImageBitmap, before: ImageBitmap, split: Float, holding: Boolean, picking: Boolean,
                       cropping: Boolean, crop: List<Double>?, ratio: Float?,
                       onSplit: (Float) -> Unit, onHold: (Boolean) -> Unit, onCrop: (List<Double>) -> Unit,
                       onPick: (Float, Float) -> Unit, onSwipe: (Int) -> Unit = {}) {
-    var scale by remember { mutableFloatStateOf(1f) }
+    var scale by model::editZoom  // (kept when swiping to the next photo; reset when Edit closes)
     val swipe by rememberUpdatedState(onSwipe)
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    var offset by model::editPan
     var area by remember { mutableStateOf(Size.Zero) }
 
     fun fitted(): Rect {
@@ -356,6 +359,7 @@ private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, hol
             var held = false
             var pinched = false
             var last = startPos
+            val startOffset = offset
             while (true) {
                 val event = awaitPointerEvent()
                 val pressed = event.changes.filter { it.pressed }
@@ -396,8 +400,11 @@ private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, hol
             // A quick sideways swipe (not zoomed in, not on the line, not cropping): the next or previous photo.
             val dx = last.x - startPos.x
             val dy = last.y - startPos.y
-            if (!cropping && !onLine && !pinched && !held && scale <= 1.01f && abs(dx) > 70.dp.toPx() &&
-                abs(dx) > 1.5f * abs(dy)) {
+            // Zoomed in, a slow drag looks round the photo; a quick flick (under ⅓ s) still changes photos.
+            val quick = System.currentTimeMillis() - startTime < 330
+            if (!cropping && !onLine && !pinched && !held && (scale <= 1.01f || quick) &&
+                abs(dx) > 70.dp.toPx() && abs(dx) > 1.5f * abs(dy)) {
+                offset = startOffset  // (the flick doesn't move the view)
                 swipe(if (dx < 0) 1 else -1)
             }
         }

@@ -39,7 +39,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val fields = mutableStateMapOf<Long, XmpFields>()
     val selected = mutableStateMapOf<Long, Boolean>()
     var editing by mutableStateOf<Photo?>(null)
-    var editTab by mutableStateOf(0)  // the Edit screen's tab: Light, Detail, Colour, Tags (kept when swiping)
+    var editTab by mutableStateOf(0)
+    var editZoom by mutableStateOf(1f)                                   // the Edit view's zoom and where it's
+    var editPan by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)  // looking: kept from photo to photo  // the Edit screen's tab: Light, Detail, Colour, Tags (kept when swiping)
     var message by mutableStateOf("")
     var pending by mutableStateOf(0)
     var busy by mutableStateOf(false)
