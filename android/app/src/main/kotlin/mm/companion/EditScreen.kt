@@ -113,7 +113,7 @@ fun EditScreen(model: AppModel, photo: Photo) {
     var turn by remember { mutableStateOf(Turn()) }
     var flipMenu by remember { mutableStateOf(false) }
     var turnedBefore by remember { mutableStateOf<ImageBitmap?>(null) }  // the original, turned as the edit is
-    var full by remember { mutableStateOf(false) }      // the photo full screen: no sliders
+    var full by model::editFull  // the photo full screen, no sliders (kept when swiping to the next photo)
     var pending by remember { mutableStateOf<Photo?>(null) }  // the photo to go to once asked about saving
 
     fun adjustments() = Adjustments.fromMap(values.filter { on[it.key] != false })
@@ -139,7 +139,7 @@ fun EditScreen(model: AppModel, photo: Photo) {
 
     fun leave() {
         model.screen = Screen.Grid; model.editing = null; model.selected.clear()
-        model.editZoom = 1f; model.editPan = Offset.Zero  // next time Edit opens, fitted
+        model.editFull = false  // next time Edit opens, with its sliders
     }
     // The Tags tab works on this photo: it's the selection while the tab is open.
     LaunchedEffect(tab, photo.id) {
@@ -204,7 +204,7 @@ fun EditScreen(model: AppModel, photo: Photo) {
         val img = after
         val before = turnedBefore ?: preview?.asImageBitmap()
         Box(Modifier.fillMaxWidth().weight(1f).background(Color(0xFF1B1C1F))) {
-            if (img != null && before != null) PhotoView(model, img, before, split, holding, picking, cropping, crop, ratio,
+            if (img != null && before != null) PhotoView(img, before, split, holding, picking, cropping, crop, ratio,
                 onSplit = { split = it }, onHold = { holding = it }, onCrop = { crop = it },
                 onPick = { fx, fy ->
                     val p = pixels?.let { turn.apply(it) } ?: return@PhotoView  // tapped on the photo as it's shown
@@ -315,13 +315,13 @@ private fun SliderRow(name: String, value: Int, enabled: Boolean, colours: List<
  * while cropping, drag the box or its corners.
  */
 @Composable
-private fun PhotoView(model: AppModel, after: ImageBitmap, before: ImageBitmap, split: Float, holding: Boolean, picking: Boolean,
+private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, holding: Boolean, picking: Boolean,
                       cropping: Boolean, crop: List<Double>?, ratio: Float?,
                       onSplit: (Float) -> Unit, onHold: (Boolean) -> Unit, onCrop: (List<Double>) -> Unit,
                       onPick: (Float, Float) -> Unit, onSwipe: (Int) -> Unit = {}) {
-    var scale by model::editZoom  // (kept when swiping to the next photo; reset when Edit closes)
+    var scale by remember { mutableFloatStateOf(1f) }
     val swipe by rememberUpdatedState(onSwipe)
-    var offset by model::editPan
+    var offset by remember { mutableStateOf(Offset.Zero) }
     var area by remember { mutableStateOf(Size.Zero) }
 
     fun fitted(): Rect {
