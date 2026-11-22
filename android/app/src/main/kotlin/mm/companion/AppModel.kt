@@ -269,8 +269,19 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     class TrashRequest(val sender: android.content.IntentSender, val photos: List<Photo>, val taken: List<String>)
     var trashRequest by mutableStateOf<TrashRequest?>(null)
 
-    fun delete(targets: List<Photo> = selection) {
+    /** After a delete Android said yes to (the Edit screen: on to the next photo). */
+    private var afterTrash: (() -> Unit)? = null
+
+    /** The photo delta places on in the folder (that can be edited), or null at either end. */
+    fun neighbour(p: Photo, delta: Int): Photo? {
+        val list = photos.filter { it.canChange }
+        val i = list.indexOfFirst { it.id == p.id }
+        return if (i < 0) null else list.getOrNull(i + delta)
+    }
+
+    fun delete(targets: List<Photo> = selection, then: (() -> Unit)? = null) {
         if (targets.isEmpty()) return
+        afterTrash = then
         try {
             val request = android.provider.MediaStore.createTrashRequest(app().contentResolver, targets.map { it.uri }, true)
             trashRequest = TrashRequest(request.intentSender, targets,
@@ -284,7 +295,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun trashed(ok: Boolean) {
         val r = trashRequest ?: return
         trashRequest = null
-        if (!ok) { message = "Not deleted"; return }
+        if (!ok) { message = "Not deleted"; afterTrash = null; return }
         viewModelScope.launch {
             val gone = withContext(Dispatchers.IO) {
                 r.photos.indices.filter { !File(r.photos[it].path).exists() }.onEach { i ->
@@ -296,6 +307,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             open(folder)
             refreshPending()
             Sync.schedule(app())
+            if (gone.isNotEmpty()) afterTrash?.invoke()
+            afterTrash = null
         }
     }
 

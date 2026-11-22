@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -101,7 +102,8 @@ fun App(model: AppModel) {
     when (model.screen) {
         Screen.Grid -> GridScreen(model)
         Screen.Details -> DetailsScreen(model)
-        Screen.Edit -> model.editing?.let { EditScreen(model, it) } ?: run { model.screen = Screen.Grid }
+        // (key: another photo, swiped to, starts afresh: its own sliders, crop and turn)
+        Screen.Edit -> model.editing?.let { key(it.id) { EditScreen(model, it) } } ?: run { model.screen = Screen.Grid }
         Screen.Settings -> SettingsScreen(model)
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -112,6 +113,8 @@ fun EditScreen(model: AppModel, photo: Photo) {
     var turn by remember { mutableStateOf(Turn()) }
     var flipMenu by remember { mutableStateOf(false) }
     var turnedBefore by remember { mutableStateOf<ImageBitmap?>(null) }  // the original, turned as the edit is
+    var full by remember { mutableStateOf(false) }      // the photo full screen: no sliders
+    var pending by remember { mutableStateOf<Photo?>(null) }  // the photo to go to once asked about saving
 
     fun adjustments() = Adjustments.fromMap(values.filter { on[it.key] != false })
     fun changed() = !adjustments().unchanged || crop != null || !turn.unchanged
@@ -135,39 +138,58 @@ fun EditScreen(model: AppModel, photo: Photo) {
     }
 
     fun leave() { model.screen = Screen.Grid; model.editing = null }
-    BackHandler { if (cropping) cropping = false else if (changed()) asking = true else leave() }
-    if (asking) AlertDialog(onDismissRequest = { asking = false }, title = { Text("Save the edit?") },
-        confirmButton = { TextButton(onClick = { asking = false; model.saveEdit(photo, adjustments(), crop, turn) { leave() } }) { Text("Save") } },
+    fun moveOn() { pending?.let { model.editing = it } ?: leave(); pending = null }  // next photo, or the grid
+    /** Swipe: the next (1) or previous (-1) photo in the folder, asking first if this one was changed. */
+    fun go(delta: Int) {
+        val target = model.neighbour(photo, delta) ?: run {
+            model.message = if (delta > 0) "That's the last photo" else "That's the first photo"; return
+        }
+        if (changed()) { pending = target; asking = true } else model.editing = target
+    }
+    BackHandler { if (full) full = false else if (cropping) cropping = false else if (changed()) asking = true else leave() }
+    if (asking) AlertDialog(onDismissRequest = { asking = false; pending = null }, title = { Text("Save the edit?") },
+        confirmButton = { TextButton(onClick = { asking = false; model.saveEdit(photo, adjustments(), crop, turn) { moveOn() } }) { Text("Save") } },
         dismissButton = {
             Row {
-                TextButton(onClick = { asking = false; leave() }) { Text("Don't save") }
-                TextButton(onClick = { asking = false }) { Text("Keep editing") }
+                TextButton(onClick = { asking = false; moveOn() }) { Text("Don't save") }
+                TextButton(onClick = { asking = false; pending = null }) { Text("Keep editing") }
             }
         })
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().background(Panel).padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { if (changed()) asking = true else leave() }) { Text("←  Edit", color = Color.White, fontSize = 17.sp) }
+            val tight = PaddingValues(horizontal = 8.dp)  // (seven buttons share a phone's width)
+            TextButton(onClick = { if (changed()) asking = true else leave() }, contentPadding = tight) {
+                Text("←", color = Color.White, fontSize = 20.sp)
+            }
             TextButton(onClick = {
                 cropping = !cropping
                 if (cropping && crop == null) crop = listOf(0.05, 0.05, 0.95, 0.95)
-            }) { Text(if (cropping) "✓ Done" else "✂ Crop", color = Color.White) }
+            }, contentPadding = tight) { Text(if (cropping) "✓ Done" else "✂ Crop", color = Color.White) }
             if (!cropping) {
                 Box {
-                    TextButton(onClick = { flipMenu = true }) { Text("⇋ Flip", color = Color.White) }
+                    TextButton(onClick = { flipMenu = true }, contentPadding = tight) { Text("⇋ Flip", color = Color.White) }
                     DropdownMenu(flipMenu, { flipMenu = false }) {
                         DropdownMenuItem(text = { Text("Flip horizontal") }, onClick = { flipMenu = false; setTurn(turn.flipped()) })
                         DropdownMenuItem(text = { Text("Flip vertical") }, onClick = { flipMenu = false; setTurn(turn.flipped(vertical = true)) })
                     }
                 }
-                TextButton(onClick = { setTurn(turn.rotated()) }) { Text("↻", color = Color.White, fontSize = 20.sp) }
+                TextButton(onClick = { setTurn(turn.rotated()) }, contentPadding = tight) { Text("↻", color = Color.White, fontSize = 20.sp) }
+                // Delete: Android asks "Move to Trash?"; then the next photo (or the one before), else the grid.
+                TextButton(onClick = {
+                    val next = model.neighbour(photo, 1) ?: model.neighbour(photo, -1)
+                    model.delete(listOf(photo)) { if (next != null) model.editing = next else leave() }
+                }, contentPadding = tight) { Text("🗑", fontSize = 18.sp) }
+                TextButton(onClick = { full = !full }, contentPadding = tight) {
+                    Text(if (full) "⊟" else "⛶", color = Color.White, fontSize = 20.sp)
+                }
             }
             Box(Modifier.weight(1f))
             Button(onClick = { model.saveEdit(photo, adjustments(), crop, turn) { leave() } }, enabled = changed() && !model.busy) {
                 if (model.busy) CircularProgressIndicator(Modifier.width(18.dp).height(18.dp), strokeWidth = 2.dp) else Text("Save")
             }
         }
-        Note(model)
+        if (!full) Note(model)
         val img = after
         val before = turnedBefore ?: preview?.asImageBitmap()
         Box(Modifier.fillMaxWidth().weight(1f).background(Color(0xFF1B1C1F))) {
@@ -178,9 +200,10 @@ fun EditScreen(model: AppModel, photo: Photo) {
                     val (y, r) = whiteBalanceAt(p, (fx * p.width).toInt(), (fy * p.height).toInt(), max(2, p.width / 300))
                     values["yellow"] = y; values["red"] = r; on["yellow"] = true; on["red"] = true
                     picking = false
-                })
+                }, onSwipe = { go(it) })
             else CircularProgressIndicator(Modifier.align(Alignment.Center))
         }
+        if (full) return@Column  // full screen: the photo only (⊟ or Back brings the sliders back)
         if (cropping) {
             Row(Modifier.fillMaxWidth().background(Panel).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 for ((name, r) in RATIOS) {
@@ -280,8 +303,9 @@ private fun SliderRow(name: String, value: Int, enabled: Boolean, colours: List<
 private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, holding: Boolean, picking: Boolean,
                       cropping: Boolean, crop: List<Double>?, ratio: Float?,
                       onSplit: (Float) -> Unit, onHold: (Boolean) -> Unit, onCrop: (List<Double>) -> Unit,
-                      onPick: (Float, Float) -> Unit) {
+                      onPick: (Float, Float) -> Unit, onSwipe: (Int) -> Unit = {}) {
     var scale by remember { mutableFloatStateOf(1f) }
+    val swipe by rememberUpdatedState(onSwipe)
     var offset by remember { mutableStateOf(Offset.Zero) }
     var area by remember { mutableStateOf(Size.Zero) }
 
@@ -318,6 +342,8 @@ private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, hol
             val startTime = System.currentTimeMillis()
             var moved = false
             var held = false
+            var pinched = false
+            var last = startPos
             while (true) {
                 val event = awaitPointerEvent()
                 val pressed = event.changes.filter { it.pressed }
@@ -326,10 +352,12 @@ private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, hol
                     scale = (scale * event.calculateZoom()).coerceIn(0.25f, 6f)
                     offset += event.calculatePan()
                     moved = true
+                    pinched = true
                     event.changes.forEach { it.consume() }
                     continue
                 }
                 val pos = pressed[0].position
+                last = pos
                 if ((pos - startPos).getDistance() > 8.dp.toPx()) moved = true
                 when {
                     cropping && startBox != null -> {
@@ -353,6 +381,13 @@ private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, hol
                 pressed[0].consume()
             }
             if (held) onHold(false)
+            // A quick sideways swipe (not zoomed in, not on the line, not cropping): the next or previous photo.
+            val dx = last.x - startPos.x
+            val dy = last.y - startPos.y
+            if (!cropping && !onLine && !pinched && !held && scale <= 1.01f && abs(dx) > 70.dp.toPx() &&
+                abs(dx) > 1.5f * abs(dy)) {
+                swipe(if (dx < 0) 1 else -1)
+            }
         }
     }) {
         area = size
