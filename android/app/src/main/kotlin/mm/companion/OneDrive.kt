@@ -268,6 +268,18 @@ class OneDrive(private val context: Context) {
         return null
     }
 
+    /** A small text file at a path in OneDrive ("Documents/Phone/Media Manager/x.json"), or null if there's none. */
+    fun readText(path: String): String? = try {
+        String(request("GET", "$GRAPH/me/drive/root:/${path.split('/').joinToString("/") { enc(it) }}:/content", null, null).second)
+    } catch (e: GraphError) {
+        if (e.code == 404) null else throw e
+    }
+
+    fun writeText(path: String, text: String) {
+        request("PUT", "$GRAPH/me/drive/root:/${path.split('/').joinToString("/") { enc(it) }}:/content",
+            text.toByteArray(), "application/json")
+    }
+
     // ---------------------------------------------------------------- HTTP
     class GraphError(val code: Int, val body: String) : IOException("OneDrive said $code: ${body.take(200)}")
 

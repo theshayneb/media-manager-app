@@ -66,6 +66,8 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   cached copy and queues the change by item id (`onedrive-items`); Settings › Wi-Fi only (Sync: UNMETERED). Look (user's approved redesign mock-up): album week headers (`core` AlbumWeek.kt = the PC's
   album_week), Phone/OneDrive switch, yellow dot = change waiting, label strip, line icons (`Icons.kt`), Tags panel
   keyword chips filled = all selected have it / outlined = some (tap: onto all, or off all), Settings: sync first, one row per photo. `media_manager/companion.py` writes OneDrive\Documents\Phone\Media Manager\companion.json.
+  `media_manager/phone_steam.py`: the phone's Steam "Import now" (steam-request.json → the PC runs Photos' Steam import
+  without its dialog, checked every minute by `MediaWindow.check_phone_steam` → steam-result.json).
 - Each part keeps its own settings file, so the user's existing Photo/Music settings carry over.
 - Tests: `python -m pytest` (`tests/photo`, `tests/music`, `tests/shell`); GUI tests run offscreen.
   ffmpeg in `vendor/ffmpeg` or on PATH, ExifTool in `vendor/exiftool`.

@@ -635,6 +635,46 @@ class MediaWindow(QMainWindow):
         self.watch_timer.timeout.connect(self.check_new_videos)
         self.watch_timer.start(WATCH_EVERY_MS)
         QTimer.singleShot(3000, self.check_new_videos)
+        # The phone's "Import now" for Steam screenshots (a request left in OneDrive): checked every minute.
+        self._phone_steam_busy = False
+        self.phone_bg = Background(1)
+        self.phone_timer = QTimer(self)
+        self.phone_timer.timeout.connect(self.check_phone_steam)
+        self.phone_timer.start(60_000)
+        QTimer.singleShot(5000, self.check_phone_steam)
+
+    def check_phone_steam(self) -> None:
+        from . import companion, phone_steam
+
+        root = companion.onedrive_folder()
+        if root is None or self._phone_steam_busy:
+            return
+        self._phone_steam_busy = True
+
+        def asked(request_id, error) -> None:  # type: ignore[no-untyped-def]
+            if error or not request_id:
+                self._phone_steam_busy = False
+                return
+            phone_steam.write_result(root, request_id, "running")
+            photos = self.photos
+            photos.status.setText("Importing Steam screenshots (asked from the phone)…")
+
+            def done(result, error2) -> None:  # type: ignore[no-untyped-def]
+                self._phone_steam_busy = False
+                if error2:
+                    phone_steam.write_result(root, request_id, "failed", problem=error2)
+                    photos.status.setText(f"Steam import (from the phone) failed: {error2}")
+                    return
+                imported, failures = result
+                phone_steam.write_result(root, request_id, "done", **phone_steam.summary(imported, failures))
+                here = os.path.normcase(os.path.normpath(photos.model.folder or ""))
+                if any(os.path.normcase(os.path.dirname(t)) == here for _, t in imported):
+                    photos.sync_folder()
+                photos.status.setText(f"Imported {len(imported)} Steam screenshot(s) (asked from the phone)")
+
+            photos.bg.run(lambda: phone_steam.run(photos.settings, photos.et), done)
+
+        self.phone_bg.run(lambda: phone_steam.pending_request(root), asked)
 
     def check_new_videos(self) -> None:
         if self._watching:

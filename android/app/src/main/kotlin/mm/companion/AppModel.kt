@@ -27,6 +27,9 @@ import java.time.LocalDateTime
 
 enum class Screen { Grid, Details, Edit, Settings }
 
+const val STEAM_REQUEST = "Documents/Phone/Media Manager/steam-request.json"
+const val STEAM_RESULT = "Documents/Phone/Media Manager/steam-result.json"
+
 class AppModel(app: Application) : AndroidViewModel(app) {
     val store = PhotoStore(app)
     val queue = SyncQueue(app)
@@ -560,6 +563,47 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             shared = Shared(app())
             Sync.schedule(app())
             refreshPending()
+        }
+    }
+
+    // ---------------------------------------------------------------- Steam screenshots, imported by the PC
+    /** What the PC said about the last import asked from here (steam-result.json), and the request waiting. */
+    data class SteamState(val asked: String = "", val askedAt: Long = 0, val result: org.json.JSONObject? = null)
+    var steam by mutableStateOf(SteamState(
+        app.getSharedPreferences("steam", 0).getString("asked", "") ?: "",
+        app.getSharedPreferences("steam", 0).getLong("asked_at", 0)))
+    private var steamJob: Job? = null
+
+    /** Leave a request in OneDrive for the PC (Media Manager looks every minute), then watch for its answer. */
+    fun importSteam() {
+        val id = java.util.UUID.randomUUID().toString()
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { drive.writeText(STEAM_REQUEST, org.json.JSONObject().put("id", id)
+                    .put("asked", java.time.LocalDateTime.now().toString()).toString()) }
+            }
+            if (ok.isFailure) { message = "Couldn't ask your PC: ${ok.exceptionOrNull()?.message}"; return@launch }
+            val now = System.currentTimeMillis()
+            app().getSharedPreferences("steam", 0).edit().putString("asked", id).putLong("asked_at", now).apply()
+            steam = steam.copy(asked = id, askedAt = now)
+            watchSteam()
+        }
+    }
+
+    /** Read the PC's answer now, and keep reading every 20 s while it's still to come (up to 15 minutes). */
+    fun watchSteam() {
+        steamJob?.cancel()
+        steamJob = viewModelScope.launch {
+            val until = System.currentTimeMillis() + 15 * 60_000
+            while (true) {
+                val o = withContext(Dispatchers.IO) {
+                    runCatching { drive.readText(STEAM_RESULT)?.let { org.json.JSONObject(it) } }.getOrNull()
+                }
+                if (o != null) steam = steam.copy(result = o)
+                val answered = o != null && o.optString("id") == steam.asked && o.optString("state") != "running"
+                if (steam.asked.isEmpty() || answered || System.currentTimeMillis() > until) break
+                delay(20_000)
+            }
         }
     }
 

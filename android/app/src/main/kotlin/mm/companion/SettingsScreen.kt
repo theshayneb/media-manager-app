@@ -153,6 +153,13 @@ fun SettingsScreen(model: AppModel) {
                     modifier = Modifier.padding(vertical = 8.dp))
             }
 
+            // ---------------------------------------------------------------- Steam screenshots (the PC imports them)
+            if (signedIn) {
+                androidx.compose.runtime.LaunchedEffect(Unit) { model.watchSteam() }
+                Heading("Steam screenshots")
+                Card { SteamCard(model) }
+            }
+
             // ---------------------------------------------------------------- OneDrive
             Heading("OneDrive")
             Card {
@@ -241,3 +248,45 @@ private fun Card(vertical: androidx.compose.ui.unit.Dp = 14.dp, content: @Compos
 private fun Heading(text: String) =
     Text(text, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFFC9CCD1),
         modifier = Modifier.padding(start = 18.dp, top = 14.dp, bottom = 2.dp))
+
+private val WHEN = java.time.format.DateTimeFormatter.ofPattern("h:mm a")
+private val WHEN_DAY = java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a")
+
+private fun shown(t: java.time.LocalDateTime): String =
+    if (t.toLocalDate() == java.time.LocalDate.now()) "today ${t.format(WHEN)}" else t.format(WHEN_DAY)
+
+/** Import now: the PC (Media Manager, running) imports them, as its own Steam import does. */
+@Composable
+private fun SteamCard(model: AppModel) {
+    val s = model.steam
+    val r = s.result
+    val answered = r != null && r.optString("id") == s.asked
+    val state = if (answered) r!!.optString("state") else ""
+    val waiting = s.asked.isNotEmpty() && (!answered || state == "running")
+    Text("Your PC imports them into the Steam folder in OneDrive.", fontSize = 13.5.sp, color = Dim)
+    // the last finished import
+    val last = r?.takeIf { it.optString("state") == "done" }
+    if (last != null) {
+        val time = runCatching { java.time.LocalDateTime.parse(last.optString("time")) }.getOrNull()
+        val n = last.optInt("imported")
+        val games = last.optJSONObject("games")?.length() ?: 0
+        Text("Last import: ${time?.let { shown(it) } ?: ""}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 10.dp))
+        Text(if (n == 0) "Nothing new" else "$n screenshot${if (n == 1) "" else "s"} from $games game${if (games == 1) "" else "s"}" +
+            if (last.optInt("failed") > 0) ", ${last.optInt("failed")} couldn't be copied" else "", fontSize = 13.5.sp)
+    }
+    if (answered && state == "failed") Text("The PC couldn't import them: ${r!!.optString("problem")}", fontSize = 13.sp,
+        color = Waiting, modifier = Modifier.padding(top = 8.dp))
+    if (waiting) {
+        val at = java.time.Instant.ofEpochMilli(s.askedAt).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
+        val text = if (state == "running") "Your PC is importing them…"
+            else if (System.currentTimeMillis() - s.askedAt > 5 * 60_000) "Asked your PC at ${at.format(WHEN)}. No answer yet: is it on, with Media Manager running?"
+            else "Asked your PC at ${at.format(WHEN)}. Waiting…"
+        Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(Waiting))
+            Text(text, fontSize = 13.5.sp, color = Color(0xFFC9CCD1), modifier = Modifier.padding(start = 8.dp))
+        }
+    }
+    Button(onClick = { model.importSteam() }, enabled = !waiting || System.currentTimeMillis() - s.askedAt > 5 * 60_000,
+        modifier = Modifier.padding(top = 12.dp)) { Text("Import now", fontWeight = FontWeight.Bold) }
+}

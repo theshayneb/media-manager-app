@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.10
+
+- Steam screenshots from the phone: the Android app's Settings › Steam screenshots › Import now leaves a request in
+  OneDrive; Media Manager (running, e.g. in the tray) sees it within a minute and runs the same Steam import as
+  Photos' button, with its settings, then tells the phone how many it imported.
+
 ## 0.7.9
 
 - Print sheet: Greys and Browns are gone from Colours to check: pick them (or any colour) with the eyedropper.
