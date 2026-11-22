@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.combinedClickable
@@ -318,7 +320,13 @@ private fun SliderRow(name: String, value: Int, enabled: Boolean, colours: List<
             }
             Slider(value.toFloat(), { onValue(it.roundToInt()) }, enabled = enabled, valueRange = min..100f,
                 colors = androidx.compose.material3.SliderDefaults.colors(activeTrackColor = Color.Transparent,
-                    inactiveTrackColor = Color.Transparent, thumbColor = Color(0xFFE6E6E6)))
+                    inactiveTrackColor = Color.Transparent, thumbColor = Color(0xFFE6E6E6)),
+                // the handle: a round dot (touching anywhere on the line still moves it there)
+                thumb = {
+                    Box(Modifier.size(22.dp).shadow(2.dp, CircleShape).clip(CircleShape)
+                        .background(if (enabled) Color(0xFFF1F1F1) else Color(0xFF6A6E75))
+                        .border(1.5.dp, Color(0x40000000), CircleShape))
+                })
         }
     }
 }
