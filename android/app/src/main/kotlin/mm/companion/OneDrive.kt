@@ -149,6 +149,60 @@ class OneDrive(private val context: Context) {
         return kotlin.math.abs(java.time.Duration.between(wall, taken).seconds) <= 1
     }
 
+    // ---------------------------------------------------------------- browsing Camera Roll
+    /** A file or folder in OneDrive, as listed. */
+    data class Entry(val id: String, val name: String, val folder: Boolean, val childCount: Int, val mime: String,
+                     val taken: String?, val modified: String, val tag: String)
+
+    private fun entry(o: JSONObject) = Entry(o.getString("id"), o.getString("name"), o.has("folder"),
+        o.optJSONObject("folder")?.optInt("childCount") ?: 0, o.optJSONObject("file")?.optString("mimeType") ?: "",
+        o.optJSONObject("photo")?.optString("takenDateTime")?.takeIf { it.isNotEmpty() },
+        o.optString("lastModifiedDateTime"), o.optString("cTag", o.optString("eTag")))
+
+    /** Camera Roll itself (its id and name). */
+    fun cameraRoll(): Entry = entry(get("/me/drive/special/cameraroll?select=id,name,folder,lastModifiedDateTime,cTag"))
+
+    /** Everything in a folder (all pages). */
+    fun children(id: String): List<Entry> {
+        val out = mutableListOf<Entry>()
+        var url: String? = "$GRAPH/me/drive/items/$id/children?\$top=200&\$select=id,name,folder,file,photo,lastModifiedDateTime,cTag,eTag"
+        while (url != null) {
+            val o = JSONObject(String(request("GET", url, null, null).second))
+            val arr = o.getJSONArray("value")
+            for (k in 0 until arr.length()) out.add(entry(arr.getJSONObject(k)))
+            url = o.optString("@odata.nextLink").takeIf { it.isNotEmpty() }
+        }
+        return out
+    }
+
+    /** OneDrive's own small picture of a photo (up to 800 px). */
+    fun thumbnail(id: String): ByteArray = request("GET", "$GRAPH/me/drive/items/$id/thumbnails/0/large/content", null, null).second
+
+    /** The first [n] bytes of a file (where its tags are), without downloading all of it. */
+    fun head(id: String, n: Int): ByteArray {
+        val conn = URL("$GRAPH/me/drive/items/$id/content").openConnection() as HttpURLConnection
+        conn.setRequestProperty("Authorization", "Bearer ${token()}")
+        conn.setRequestProperty("Range", "bytes=0-${n - 1}")
+        conn.connectTimeout = 30_000
+        conn.readTimeout = 60_000
+        try {
+            val code = conn.responseCode
+            if (code !in 200..299) throw GraphError(code, conn.errorStream?.use { String(it.readBytes()) } ?: "")
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(16 * 1024)
+            conn.inputStream.use { s ->
+                while (out.size() < n) {
+                    val r = s.read(buf, 0, minOf(buf.size, n - out.size()))
+                    if (r < 0) break
+                    out.write(buf, 0, r)
+                }
+            }
+            return out.toByteArray()
+        } finally {
+            conn.disconnect()  // (if the range was ignored: stop the rest)
+        }
+    }
+
     // ---------------------------------------------------------------- changing it
     fun download(id: String): ByteArray = request("GET", "$GRAPH/me/drive/items/$id/content", null, null).second
 

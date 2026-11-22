@@ -97,6 +97,7 @@ private val RATIOS = listOf("Free" to null, "Original" to -1f, "6×4" to 1.5f, "
 @Composable
 fun EditScreen(model: AppModel, photo: Photo) {
     var preview by remember { mutableStateOf<Bitmap?>(null) }
+    var failed by remember { mutableStateOf("") }
     var pixels by remember { mutableStateOf<Pixels?>(null) }
     var after by remember { mutableStateOf<ImageBitmap?>(null) }
     val values = remember { mutableStateMapOf<String, Int>() }
@@ -121,7 +122,9 @@ fun EditScreen(model: AppModel, photo: Photo) {
     fun setTurn(t: Turn) { turn = t; crop = null; cropping = false }  // a crop box drawn before no longer fits
 
     LaunchedEffect(photo.id) {
-        val bmp = withContext(Dispatchers.IO) { runCatching { decodePreview(model.store.read(photo), 2048) }.getOrNull() }
+        // (a OneDrive photo is downloaded first; with no connection, one that hasn't been can't be opened)
+        val bytes = runCatching { model.readForEdit(photo) }.onFailure { failed = it.message ?: "Couldn't open it" }.getOrNull()
+        val bmp = bytes?.let { withContext(Dispatchers.IO) { runCatching { decodePreview(it, 2048) }.getOrNull() } }
         preview = bmp
         pixels = bmp?.toPixels()
         after = bmp?.asImageBitmap()
@@ -212,6 +215,7 @@ fun EditScreen(model: AppModel, photo: Photo) {
                     values["yellow"] = y; values["red"] = r; on["yellow"] = true; on["red"] = true
                     picking = false
                 }, onSwipe = { go(it) })
+            else if (failed.isNotEmpty()) Text(failed, color = Dim, modifier = Modifier.align(Alignment.Center).padding(24.dp))
             else CircularProgressIndicator(Modifier.align(Alignment.Center))
         }
         if (full) return@Column  // full screen: the photo only (⊟ or Back brings the sliders back)

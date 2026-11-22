@@ -20,7 +20,8 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.coroutines.resume
 
-/** A photo on the phone (from Android's media library). */
+/** A photo on the phone (from Android's media library), or in OneDrive's Camera Roll ([cloudId]: its OneDrive id;
+ *  [path]: the phone's copy, there once it's downloaded). */
 data class Photo(
     val id: Long,
     val path: String,
@@ -28,7 +29,9 @@ data class Photo(
     val takenMillis: Long,
     val modified: Long,
     val mime: String,
+    val cloudId: String? = null,
 ) {
+    val inCloud get() = cloudId != null
     val uri: Uri get() = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
     val isJpeg get() = mime == "image/jpeg" || name.lowercase().let { it.endsWith(".jpg") || it.endsWith(".jpeg") }
     val isPng get() = mime == "image/png" || name.lowercase().endsWith(".png")
@@ -36,7 +39,9 @@ data class Photo(
     val canChange get() = isJpeg || isPng
 }
 
-data class Folder(val id: String, val name: String, val count: Int, val path: String = "")
+data class Folder(val id: String, val name: String, val count: Int, val path: String = "") {
+    val inCloud get() = id.startsWith(CloudPhotos.CLOUD)
+}
 
 val EXIF_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
 
@@ -124,20 +129,24 @@ class PhotoStore(private val context: Context) {
         } finally {
             backup.delete()
         }
-        scan(file.path)
+        if (!photo.inCloud) scan(file.path)
     }
 
     fun dateTaken(photo: Photo): LocalDateTime? {
         val exif = try { ExifInterface(photo.path) } catch (e: Exception) { null }
         val text = exif?.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
             ?: exif?.getAttribute(ExifInterface.TAG_DATETIME_DIGITIZED)
+        if (text == null && photo.inCloud && photo.takenMillis > 0 && !File(photo.path).exists()) {
+            // Not downloaded yet: the date OneDrive read from it.
+            return LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(photo.takenMillis), java.time.ZoneId.systemDefault())
+        }
         return text?.let { runCatching { LocalDateTime.parse(it.trim(), EXIF_DATE) }.getOrNull() }
     }
 
     /** Set "date taken" (as the Windows app does: DateTimeOriginal, CreateDate and ModifyDate). */
     suspend fun setDateTaken(photo: Photo, exifDate: String) {
         setDateInFile(File(photo.path), exifDate)
-        scan(photo.path)
+        if (!photo.inCloud) scan(photo.path)
     }
 
     suspend fun rename(photo: Photo, newName: String): String {

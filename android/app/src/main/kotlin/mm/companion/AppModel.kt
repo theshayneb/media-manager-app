@@ -30,6 +30,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val store = PhotoStore(app)
     val queue = SyncQueue(app)
     val drive = OneDrive(app)
+    val cloud = CloudPhotos(app, drive)
     var shared by mutableStateOf(Shared(app))
 
     var screen by mutableStateOf(Screen.Grid)
@@ -40,7 +41,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val selected = mutableStateMapOf<Long, Boolean>()
     var editing by mutableStateOf<Photo?>(null)
     var editTab by mutableStateOf(0)
-    var editFull by mutableStateOf(false)  // the Edit view full screen (no sliders): kept from photo to photo  // the Edit screen's tab: Light, Detail, Colour, Tags (kept when swiping)
+    var editFull by mutableStateOf(false)  // the Edit view full screen (no sliders): kept from photo to photo
     var message by mutableStateOf("")
     var pending by mutableStateOf(0)
     var busy by mutableStateOf(false)
@@ -151,7 +152,39 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         return favs + list.filterNot { f -> favorites.any { it.equals(f.path, true) } }
     }
 
+    // ---------------------------------------------------------------- 📱 Phone or ☁ OneDrive
+    /** Browsing OneDrive's Camera Roll (not the phone's folders). */
+    var inCloud by mutableStateOf(false)
+    var wifiOnly by mutableStateOf(cloud.wifiOnly)
+    private var phoneFolder: Folder? = null
+    private var cloudFolder: Folder? = null
+
+    fun useCloud(on: Boolean) {
+        if (on == inCloud) return
+        if (on && !signedIn) { message = "Sign in to OneDrive first (⚙)"; return }
+        if (on) phoneFolder = folder else cloudFolder = folder
+        inCloud = on
+        folder = if (on) cloudFolder else phoneFolder
+        photos = emptyList()
+        reload()
+    }
+
+    fun setWifiOnly(on: Boolean) {
+        cloud.wifiOnly = on
+        wifiOnly = on
+        Sync.schedule(app())
+    }
+
     fun reload() = viewModelScope.launch {
+        if (inCloud) {
+            val online = cloud.online()
+            val list = withContext(Dispatchers.IO) { runCatching { cloud.folders(online) } }
+            list.exceptionOrNull()?.let { message = "OneDrive: ${it.message}" }
+            folders = list.getOrDefault(emptyList())
+            val keep = folder?.let { f -> folders.firstOrNull { it.id == f.id } }
+            open(keep ?: folders.firstOrNull { it.count > 0 } ?: folders.firstOrNull())
+            return@launch
+        }
         found = withContext(Dispatchers.IO) { store.folders() }
         val list = arrange(found)
         folders = list
@@ -159,11 +192,30 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         open(keep ?: list.firstOrNull { it.name.equals("Camera", true) } ?: list.firstOrNull())
     }
 
+    /** OneDrive's list, with what's still waiting to be done there: renamed, and deleted ones gone. */
+    private fun withQueued(list: List<Photo>): List<Photo> {
+        val waiting = queue.all().groupBy { it.photoId }
+        return list.mapNotNull { p ->
+            val es = waiting[p.id] ?: return@mapNotNull p
+            if (es.any { it.change == Change.Delete }) return@mapNotNull null
+            (es.lastOrNull { it.change is Change.Rename }?.change as Change.Rename?)?.let { p.copy(name = it.name) } ?: p
+        }
+    }
+
+    private suspend fun listPhotos(f: Folder): List<Photo> = withContext(Dispatchers.IO) {
+        if (!f.inCloud) return@withContext store.photos(f.id)
+        val online = cloud.online()
+        val listed = runCatching { cloud.photos(f, online) }
+            .recoverCatching { if (online) cloud.photos(f, false) else throw it }  // (as last seen)
+        listed.exceptionOrNull()?.let { withContext(Dispatchers.Main) { message = "OneDrive: ${it.message}" } }
+        withQueued(listed.getOrDefault(emptyList()))
+    }
+
     fun open(f: Folder?) {
         folder = f
         selected.clear()
         viewModelScope.launch {
-            photos = if (f == null) emptyList() else withContext(Dispatchers.IO) { store.photos(f.id) }
+            photos = if (f == null) emptyList() else listPhotos(f)
             // Editing a photo that was just renamed (its Tags tab): the same photo, its new name and path.
             val e = editing
             if (screen == Screen.Edit && e != null) {
@@ -175,15 +227,24 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     /** A photo's tags read now (if the grid hasn't yet). */
     fun loadFields(p: Photo) {
         if (p.id in fields) return
-        viewModelScope.launch { fields[p.id] = withContext(Dispatchers.IO) { store.fields(p) } }
+        viewModelScope.launch { withContext(Dispatchers.IO) { readFields(p, always = true) } }
+    }
+
+    /** Its tags into [fields]. A OneDrive photo not downloaded: the start of the file (on Wi-Fi, or when it's
+     *  opened or selected), so scrolling on mobile data doesn't use much. */
+    private fun readFields(p: Photo, always: Boolean) {
+        if (!p.inCloud || cloud.isLocal(p)) { fields[p.id] = store.fields(p); return }
+        if (!cloud.online() || !(always || cloud.unmetered())) return
+        runCatching { cloud.fields(p) }.getOrNull()?.let { fields[p.id] = it }
     }
 
     suspend fun thumbnail(p: Photo): Bitmap? {
         thumbs.get(p.id)?.let { return it }
         return reading.withPermit {
             withContext(Dispatchers.IO) {
-                if (p.id !in fields) fields[p.id] = store.fields(p)
-                store.thumbnail(p)?.also { thumbs.put(p.id, it) }
+                if (p.id !in fields) readFields(p, always = false)
+                val bmp = if (p.inCloud) runCatching { cloud.thumbnail(p, cloud.online()) }.getOrNull() else store.thumbnail(p)
+                bmp?.also { thumbs.put(p.id, it) }
             }
         }
     }
@@ -195,7 +256,22 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     // ---------------------------------------------------------------- changes (phone now, OneDrive queued)
     private fun record(p: Photo, change: Change, name: String = p.name,
                        taken: String = store.dateTaken(p)?.format(EXIF_DATE) ?: "") {
+        p.cloudId?.let { app().getSharedPreferences("onedrive-items", 0).edit().putString(p.id.toString(), it).apply() }
         queue.add(p.id, name, originalName(p), taken, change)
+    }
+
+    /** A OneDrive photo onto the phone (if it isn't yet and OneDrive can be used now); true if it's here. */
+    private fun local(p: Photo): Boolean {
+        if (!p.inCloud || cloud.isLocal(p)) return true
+        if (!cloud.online()) return false
+        cloud.fetch(p)
+        return true
+    }
+
+    /** The photo's bytes for the Edit screen (a OneDrive photo is downloaded first). */
+    suspend fun readForEdit(p: Photo): ByteArray = withContext(Dispatchers.IO) {
+        if (!local(p)) throw java.io.IOException("Not downloaded yet. ${cloud.whyOffline()}.")
+        store.read(p)
     }
 
     private fun originalName(p: Photo): String =
@@ -206,18 +282,24 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         busy = true
         viewModelScope.launch {
             var done = 0
+            var queuedOnly = 0
             val problems = mutableListOf<String>()
             withContext(Dispatchers.IO) {
                 for (p in targets) {
                     try {
+                        if (change.isTag && !p.canChange) { problems.add("${p.name}: only JPG and PNG photos can be tagged"); continue }
+                        val taken = store.dateTaken(p)?.format(EXIF_DATE) ?: ""
+                        if (!local(p)) {
+                            // A OneDrive photo with no connection: done there once online.
+                            record(p, change, taken = taken); queuedOnly++; done++; continue
+                        }
                         if (change.isTag) {
-                            if (!p.canChange) { problems.add("${p.name}: only JPG and PNG photos can be tagged"); continue }
                             store.write(p, applyTags(store.read(p), change))
                             fields[p.id] = store.fields(p)
                         } else if (change is Change.DateTaken) {
                             store.setDateTaken(p, change.exif)
                         }
-                        record(p, change)
+                        record(p, change, taken = taken)
                         done++
                     } catch (e: Exception) {
                         problems.add("${p.name}: ${e.message}")
@@ -225,6 +307,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             finish(done, problems)
+            if (queuedOnly > 0) message += " · $queuedOnly will be done in OneDrive once online"
         }
     }
 
@@ -240,7 +323,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 for ((p, dt) in found) {
                     try {
                         val exif = dt.format(EXIF_DATE)
-                        store.setDateTaken(p, exif)
+                        if (local(p)) store.setDateTaken(p, exif)
                         record(p, Change.DateTaken(exif))
                     } catch (e: Exception) { problems.add("${p.name}: ${e.message}") }
                 }
@@ -267,7 +350,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                         val prefs = app().getSharedPreferences("original-names", 0)
                         if (!prefs.contains(p.id.toString())) prefs.edit().putString(p.id.toString(), p.name).apply()
                         record(p, Change.Rename(newName))  // queued with the old name (to find it in OneDrive)
-                        store.rename(p, newName)
+                        if (!p.inCloud) store.rename(p, newName)  // (OneDrive's: shown renamed until it's done there)
                         done++
                     } catch (e: Exception) { problems.add("${p.name}: ${e.message}") }
                 }
@@ -292,8 +375,35 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         return if (i < 0) null else list.getOrNull(i + delta)
     }
 
+    /** Deleting OneDrive photos: asked here (Android's Trash isn't theirs); they go to OneDrive's recycle bin. */
+    class CloudDelete(val photos: List<Photo>, val then: (() -> Unit)?)
+    var cloudDelete by mutableStateOf<CloudDelete?>(null)
+
+    fun confirmCloudDelete(ok: Boolean) {
+        val r = cloudDelete ?: return
+        cloudDelete = null
+        if (!ok) { message = "Not deleted"; return }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                r.photos.forEach { p ->
+                    record(p, Change.Delete, taken = store.dateTaken(p)?.format(EXIF_DATE) ?: "")
+                    cloud.forget(p)
+                    thumbs.remove(p.id)
+                }
+            }
+            val gone = r.photos.map { it.id }.toSet()
+            photos = photos.filterNot { it.id in gone }
+            gone.forEach { selected.remove(it) }
+            message = "Deleted ${gone.size} from OneDrive" + if (cloud.online()) "" else " (once online)"
+            refreshPending()
+            Sync.schedule(app())
+            r.then?.invoke()
+        }
+    }
+
     fun delete(targets: List<Photo> = selection, then: (() -> Unit)? = null) {
         if (targets.isEmpty()) return
+        if (targets.any { it.inCloud }) { cloudDelete = CloudDelete(targets, then); return }
         afterTrash = then
         try {
             val request = android.provider.MediaStore.createTrashRequest(app().contentResolver, targets.map { it.uri }, true)
@@ -340,10 +450,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.Default) {
+                    if (!local(p)) throw java.io.IOException("Not downloaded yet. ${cloud.whyOffline()}.")
                     val bytes = store.read(p)
                     val rawCrop = uprightCrop?.let { cropToRaw(it, orientationOf(bytes)) }
                     val edited = editImage(bytes, adjustments, rawCrop, turn)
-                    store.keepOriginalInTrash(p, bytes)
+                    if (!p.inCloud) store.keepOriginalInTrash(p, bytes)  // (OneDrive keeps the earlier version)
                     store.write(p, edited)
                     fields[p.id] = store.fields(p)
                     thumbs.remove(p.id)
@@ -353,7 +464,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                     lastEdit = adjustments.toMap()
                     app().getSharedPreferences("edit", 0).edit().putString("last", org.json.JSONObject(lastEdit as Map<*, *>).toString()).apply()
                 }
-                message = "Saved. The original is in the Trash."
+                message = if (p.inCloud) "Saved. OneDrive keeps the earlier version." else "Saved. The original is in the Trash."
                 then()
             } catch (e: OutOfMemoryError) {
                 message = "This photo is too big to edit on this phone"

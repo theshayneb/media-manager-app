@@ -63,11 +63,14 @@ object Sync {
     }
 
     fun schedule(context: Context) {
-        val online = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        // Settings › "Wi-Fi only": then only on a network that isn't metered.
+        val wifiOnly = context.getSharedPreferences("onedrive", Context.MODE_PRIVATE).getBoolean("wifi_only", false)
+        val online = Constraints.Builder()
+            .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build()
         val wm = WorkManager.getInstance(context)
         wm.enqueueUniqueWork(ONCE, ExistingWorkPolicy.REPLACE,
             OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(online).build())
-        wm.enqueueUniquePeriodicWork(HOURLY, ExistingPeriodicWorkPolicy.KEEP,
+        wm.enqueueUniquePeriodicWork(HOURLY, ExistingPeriodicWorkPolicy.UPDATE,
             PeriodicWorkRequestBuilder<SyncWorker>(1, TimeUnit.HOURS).setConstraints(online).build())
     }
 }

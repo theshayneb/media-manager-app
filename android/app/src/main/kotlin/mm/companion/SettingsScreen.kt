@@ -20,6 +20,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -77,6 +78,14 @@ fun SettingsScreen(model: AppModel) {
                 }
             }
             if (problem.isNotEmpty()) Text(problem, color = Color(0xFFE0A040), fontSize = 13.sp)
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Wi-Fi only")
+                    Text("Browse, download and sync OneDrive photos only on Wi-Fi (not on mobile data). Changes wait " +
+                        "until you're on Wi-Fi.", color = Dim, fontSize = 12.sp)
+                }
+                Switch(model.wifiOnly, { model.setWifiOnly(it) })
+            }
 
             Title("Sync")
             Text(if (!signedIn) "Not signed in to OneDrive yet, so nothing can sync." else if (entries.isEmpty()) "Everything is synced." else "${entries.size} change${if (entries.size == 1) "" else "s"} waiting:")

@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -98,6 +100,15 @@ fun App(model: AppModel) {
     }
     LaunchedEffect(model.trashRequest) {
         model.trashRequest?.let { trash.launch(IntentSenderRequest.Builder(it.sender).build()) }
+    }
+    // Deleting OneDrive photos: asked here (they go to OneDrive's recycle bin).
+    model.cloudDelete?.let { d ->
+        val n = d.photos.size
+        AlertDialog(onDismissRequest = { model.confirmCloudDelete(false) },
+            title = { Text(if (n == 1) "Delete ${d.photos[0].name} from OneDrive?" else "Delete $n photos from OneDrive?") },
+            text = { Text("They go to OneDrive's recycle bin, where they can be restored.") },
+            confirmButton = { TextButton(onClick = { model.confirmCloudDelete(true) }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { model.confirmCloudDelete(false) }) { Text("Cancel") } })
     }
     when (model.screen) {
         Screen.Grid -> GridScreen(model)

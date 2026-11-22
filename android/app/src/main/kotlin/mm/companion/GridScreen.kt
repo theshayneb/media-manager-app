@@ -92,8 +92,23 @@ private fun TopBar(model: AppModel) {
             TextButton(onClick = { model.selected.clear() }) { Text("✕  ${model.selected.size} selected", color = Color.White) }
         } else {
             Box {
-                TextButton(onClick = { open = true }) { Text("📂 ${model.folder?.name ?: "No photos"} ▾", color = Color.White, fontSize = 17.sp) }
+                val icon = if (model.inCloud) "☁" else "📂"
+                TextButton(onClick = { open = true }) {
+                    Text("$icon ${model.folder?.name?.removePrefix("Camera Roll › ") ?: "No photos"} ▾", color = Color.White, fontSize = 17.sp)
+                }
                 DropdownMenu(open, { open = false }) {
+                    // 📱 the phone's folders, or ☁ OneDrive's Camera Roll
+                    Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        for ((cloud, text) in listOf(false to "📱 Phone", true to "☁ OneDrive")) {
+                            val on = model.inCloud == cloud
+                            Text(text, color = if (on) Color.White else Dim, fontSize = 15.sp,
+                                modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(16.dp))
+                                    .background(if (on) Accent else Color(0xFF3A3D42))
+                                    .clickable { model.useCloud(cloud); if (!cloud || model.signedIn) open = false }
+                                    .padding(horizontal = 14.dp, vertical = 6.dp))
+                        }
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     val favs = model.folders.count { model.isFavorite(it) }
                     if (favs > 0) Text("★ FAVOURITES", color = Dim, fontSize = 12.sp,
                         modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp))
@@ -103,11 +118,11 @@ private fun TopBar(model: AppModel) {
                         DropdownMenuItem(
                             text = { Text("${f.name}  (${"%,d".format(f.count)})") },
                             onClick = { open = false; model.open(f) },
-                            trailingIcon = {
+                            trailingIcon = if (f.inCloud) null else { {
                                 Text(if (fav) "★" else "☆", fontSize = 22.sp, color = if (fav) Color(0xFFE8C020) else Dim,
                                     modifier = Modifier.clip(CircleShape).clickable { model.toggleFavorite(f) }
                                         .padding(horizontal = 10.dp, vertical = 4.dp))
-                            },
+                            } },
                         )
                     }
                 }
