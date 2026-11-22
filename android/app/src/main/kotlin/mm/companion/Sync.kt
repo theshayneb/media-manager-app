@@ -11,6 +11,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import mm.core.Adjustments
 import mm.core.Change
@@ -54,6 +55,10 @@ class Shared(context: Context) {
 }
 
 object Sync {
+    /** One sync at a time: the "now" one and the hourly one used to run together and change the same
+     *  OneDrive file at once (OneDrive then refuses one: 409 "resourceModified"). */
+    val running = kotlinx.coroutines.sync.Mutex()
+
     private const val ONCE = "sync-now"
     private const val HOURLY = "sync-hourly"
 
@@ -77,7 +82,9 @@ object Sync {
 
 /** Does the queued changes to the OneDrive copies (in order; a photo not uploaded yet waits). */
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+    override suspend fun doWork(): Result = Sync.running.withLock { sync() }
+
+    private suspend fun sync(): Result = withContext(Dispatchers.IO) {
         val drive = OneDrive(applicationContext)
         if (!drive.signedIn) return@withContext Result.success()
         runCatching { drive.companion()?.let { Shared(applicationContext).save(it) } }
@@ -114,13 +121,23 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         Change.Delete -> { drive.delete(found.id); ids.edit().remove(photoId.toString()).apply(); i++ }
                         else -> {
                             // a run of tag / date / edit changes: one download, one upload
-                            var bytes = drive.download(found.id)
                             var j = i
-                            while (j < entries.size && entries[j].change.let { it !is Change.Rename && it != Change.Delete }) {
-                                bytes = applyToBytes(bytes, entries[j].change)
-                                j++
+                            while (j < entries.size && entries[j].change.let { it !is Change.Rename && it != Change.Delete }) j++
+                            val run = entries.subList(i, j)
+                            // OneDrive changed it while uploading (still processing a new upload, or the PC's
+                            // OneDrive saving it): start again from its new version.
+                            var attempt = 0
+                            while (true) {
+                                var bytes = drive.download(found.id)
+                                for (r in run) bytes = applyToBytes(bytes, r.change)
+                                try {
+                                    drive.upload(found.id, bytes)
+                                    break
+                                } catch (ex: OneDrive.GraphError) {
+                                    if (ex.code != 409 || ++attempt >= 4) throw ex
+                                    kotlinx.coroutines.delay(5_000L * attempt)
+                                }
                             }
-                            drive.upload(found.id, bytes)
                             queue.remove(entries.subList(i, j).map { it.id }.toSet())
                             i = j
                             continue
