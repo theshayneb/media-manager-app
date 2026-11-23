@@ -15,6 +15,9 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   "Obsidian notes" (TXXX:Obsidian Notes / Vorbis OBSIDIAN NOTES, one line of text) on the Extra tab, above
   Obsidian tags; the tag cache accepts versions 9 and 10, and Music reads the Library at start when the cache
   has none of it (`_fill_cache`).
+  And a hook in its right-click menu, `extra_menu_items(tracks)`, for Media Manager's ✂ Trim… (Ctrl+T):
+  `trim.py` (no Qt: MP3 cut between frames + fades by lowering each frame's global_gain, never re-encoded; Xing
+  header rebuilt; FLAC via ffmpeg) and `trim_window.py` (waveform with handles, preview copies); `MediaWindow.trim_song`.
 - `scrub.py`: every timeline slider jumps to a click and follows a drag (a QProxyStyle per slider; Photos'
   VideoView is patched before Photo Manager's window is built).
 - `photo_edit.py` (curves per channel, saved like Photo Manager's crop: tags copied with ExifTool, original

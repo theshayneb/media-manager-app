@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QEvent, QMimeData, QPoint, Qt, QTimer
-from PySide6.QtGui import QBrush, QColor, QDrag, QFont, QIcon, QPainter, QPen
+from PySide6.QtGui import QAction, QBrush, QColor, QDrag, QFont, QIcon, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QSystemTrayIcon,
@@ -28,7 +29,7 @@ from music_manager.ui.main_window import MainWindow as MusicWindow
 from photo_manager.ui.folders import dropped_files, wants_copy
 from photo_manager.ui.main_window import MainWindow as PhotoWindow
 
-from . import __version__, bars, scrub
+from . import __version__, bars, scrub, trim
 from .movies import watch
 from .movies.window import KINDS, MoviesWindow
 from .settings import MediaSettings
@@ -202,6 +203,14 @@ class MediaWindow(QMainWindow):
 
         scrub.install(self.music, self.movies)  # drag along any timeline to scrub
         self.photos.quiet_steam_import = True  # no pop-up after a Steam import (the status bar says it)
+        # Music › Trim… (right-click a song, or Ctrl+T): cut its start/end, with fades (media_manager.trim)
+        self.music.extra_menu_items = lambda tracks: (
+            [("✂ Trim… (Ctrl+T)", self.trim_song)] if len(tracks) == 1 and trim.can_trim(tracks[0].path) else [])
+        trim_action = QAction("Trim…", self.music)
+        trim_action.setShortcut(QKeySequence("Ctrl+T"))
+        trim_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        trim_action.triggered.connect(self.trim_song)
+        self.music.addAction(trim_action)
         self._build_tray()
         # The same top-bar layout in every section.
         self.music_folder = bars.music_bar(self.music, self)
@@ -642,6 +651,48 @@ class MediaWindow(QMainWindow):
         self.phone_timer.timeout.connect(self.check_phone_steam)
         self.phone_timer.start(60_000)
         QTimer.singleShot(5000, self.check_phone_steam)
+
+    def trim_song(self) -> None:
+        """Music › Trim…: the selected song's start and/or end cut off, with fades; the original to the Recycle Bin."""
+        from music_manager.core import loudness, tags
+
+        from .trim_window import TrimWindow
+
+        music = self.music
+        tracks = music.selected_tracks()
+        if len(tracks) != 1 or not trim.can_trim(tracks[0].path):
+            music.status.setText("Choose one MP3 or FLAC song to trim")
+            return
+        if not music.ffmpeg:
+            QMessageBox.warning(self, "Trim", "ffmpeg wasn't found.")
+            return
+        path = tracks[0].path
+        dlg = TrimWindow(music.ffmpeg, path, self)
+        if not dlg.exec():
+            return
+        start, end, fade_in, fade_out = dlg.values()
+        state = music._release([path])
+        music.status.setText(f"Trimming {os.path.basename(path)}…")
+        ffmpeg = music.ffmpeg
+
+        def work() -> None:
+            trim.trim_in_place(ffmpeg, path, start, end, fade_in, fade_out)
+            if tags.can_write(path):
+                try:
+                    loudness.analyze(ffmpeg, path)  # the new length's ReplayGain
+                except Exception:  # noqa: BLE001 - the trim is done; only the volume tag is old
+                    pass
+
+        def done(_result, error) -> None:  # type: ignore[no-untyped-def]
+            music._resume(state)
+            if error:
+                music.status.setText("Not trimmed")
+                QMessageBox.warning(self, "Trim", f"Couldn't trim {os.path.basename(path)}:\n{error}")
+                return
+            music.status.setText(f"Trimmed {os.path.basename(path)} (the original is in the Recycle Bin)")
+            music._refresh_tracks({path: path})
+
+        music.bg.run(work, done)
 
     def check_phone_steam(self) -> None:
         from . import companion, phone_steam

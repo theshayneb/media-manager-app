@@ -1561,6 +1561,9 @@ class MainWindow(QMainWindow):
         menu.addAction("Rename from tags…", self.rename_selected)
         if len(tracks) == 1:
             menu.addAction("Rename… (F2)", self.rename_one)
+        # Media Manager adds its own entries here (Trim…).
+        for text, slot in getattr(self, "extra_menu_items", lambda _tracks: [])(tracks):
+            menu.addAction(text, slot)
         menu.addAction("Measure volume", self.measure_selected)
         if any(t.error for t in tracks):
             menu.addAction("🛠 Repair file…", self.repair_selected)

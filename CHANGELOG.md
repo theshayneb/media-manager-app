@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.11
+
+- Music: ✂ Trim… (right-click a song, or Ctrl+T): drag the handles on the song's waveform (or type the times) to
+  cut off its start and/or end, with a fade in and fade out; listen first ("Play from here", "Play the last 5 s").
+  MP3s aren't re-encoded: the cut is made between MP3 frames (about 1/40 s) and fades turn down each frame's own
+  volume (1.5 dB steps). FLAC is trimmed with ffmpeg (lossless). The original goes to the Recycle Bin; tags,
+  lyrics and the .txt are kept, and ReplayGain is measured again.
+
 ## 0.7.10
 
 - Steam screenshots from the phone: the Android app's Settings › Steam screenshots › Import now leaves a request in
