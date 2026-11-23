@@ -181,13 +181,28 @@ def test_trim_from_music(tmp_path, monkeypatch):
     monkeypatch.setattr(fileops, "recycle", lambda paths: [binned.append(p) or os.remove(p) for p in paths] and [])
     win.trim_song()
     end = time.time() + 20
-    while "Trimmed" not in music.status.text() and time.time() < end:
+    def trimmed():  # (the status bar text can be replaced meanwhile, e.g. by Music's own folder scan)
+        try:
+            return bool(binned) and abs(trim.mp3_duration(song.read_bytes()) - 3.0) < 0.1
+        except (OSError, trim.TrimError):
+            return False
+
+    while not trimmed() and time.time() < end:
         QApplication.processEvents()
         time.sleep(0.02)
-    assert "Trimmed" in music.status.text(), music.status.text()
+    assert trimmed(), music.status.text()
     assert binned == [str(song)]
-    assert abs(trim.mp3_duration(song.read_bytes()) - 3.0) < 0.1
+    while time.time() < end and not any("replaygain_track_gain" in k.lower() for k in _tags(song)):
+        QApplication.processEvents()
+        time.sleep(0.05)
+    assert any("replaygain_track_gain" in k.lower() for k in _tags(song))  # measured again
+    win.close()
+
+
+def _tags(path):
     from mutagen.mp3 import MP3
 
-    assert any("replaygain_track_gain" in k.lower() for k in MP3(song).tags.keys())  # measured again
-    win.close()
+    try:
+        return list(MP3(path).tags.keys())
+    except Exception:  # noqa: BLE001 - being written
+        return []
