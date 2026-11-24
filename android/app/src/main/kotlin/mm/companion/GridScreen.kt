@@ -216,6 +216,7 @@ private fun BottomBar(model: AppModel) {
         for ((icon, label) in listOf("🏷" to "Label", "#" to "Keywords", "📅" to "Date", "✏️" to "Rename")) {
             BarButton(icon, label) { model.screen = Screen.Details }
         }
+        if (model.selected.size >= 2) BarButton("⧉", "Compare") { model.startCompare() }  // sideways, side by side
         if (model.inCloud) BarButton("📁", "Move") { model.moving = MoveRequest(model.selection) }
         BarButton("🗑", "Delete") { model.delete() }  // Android asks "Move to Trash?" itself
     }

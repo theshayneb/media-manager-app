@@ -25,7 +25,7 @@ import mm.core.renamePlan
 import java.io.File
 import java.time.LocalDateTime
 
-enum class Screen { Grid, Details, Edit, Settings }
+enum class Screen { Grid, Details, Edit, Settings, Compare }
 
 const val STEAM_REQUEST = "Documents/Phone/Media Manager/steam-request.json"
 const val STEAM_RESULT = "Documents/Phone/Media Manager/steam-result.json"
@@ -510,6 +510,28 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             if (gone.isNotEmpty()) afterTrash?.invoke()
             afterTrash = null
         }
+    }
+
+    // ---------------------------------------------------------------- Compare (2–4 side by side)
+    var comparing by mutableStateOf(listOf<Photo>())
+    var compareActive by mutableStateOf(0L)
+
+    fun startCompare() {
+        val sel = selection
+        if (sel.size < 2) return
+        comparing = sel.take(MAX_COMPARE)
+        compareActive = comparing[0].id
+        if (sel.size > MAX_COMPARE) message = "Comparing the first $MAX_COMPARE of ${sel.size} selected photos"
+        screen = Screen.Compare
+    }
+
+    /** Back to the grid, the compared photos still selected. */
+    fun leaveCompare() {
+        val ids = comparing.map { it.id }
+        comparing = emptyList()
+        if (screen == Screen.Compare) screen = Screen.Grid
+        selected.clear()
+        ids.filter { id -> photos.any { it.id == id } }.forEach { selected[it] = true }
     }
 
     /** The Move picker, while it's open. */

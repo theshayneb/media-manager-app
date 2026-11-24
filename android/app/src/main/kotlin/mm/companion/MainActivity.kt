@@ -93,6 +93,7 @@ fun App(model: AppModel) {
     BackHandler(enabled = model.screen != Screen.Grid || model.selected.isNotEmpty()) {
         when {
             model.screen == Screen.Edit -> model.screen = Screen.Grid  // EditScreen asks first if changed
+            model.screen == Screen.Compare -> model.leaveCompare()
             model.screen != Screen.Grid -> model.screen = Screen.Grid
             else -> model.selected.clear()
         }
@@ -120,6 +121,7 @@ fun App(model: AppModel) {
         // (key: another photo, swiped to, starts afresh: its own sliders, crop and turn)
         Screen.Edit -> model.editing?.let { key(it.id) { EditScreen(model, it) } } ?: run { model.screen = Screen.Grid }
         Screen.Settings -> SettingsScreen(model)
+        Screen.Compare -> CompareScreen(model)
     }
 }
 
