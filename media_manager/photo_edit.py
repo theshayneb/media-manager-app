@@ -123,6 +123,7 @@ WARM = (0.20, 0.12, -0.40)    # red, green, blue change at Yellow +100
 TINT = (0.30, -0.24, 0.0)     # at Red +100
 CONTRAST_UP, CONTRAST_DOWN = 1.2, 0.8
 LIFT = 0.7                    # shadows / highlights
+SHADOW_REACH = 0.55           # shadows only changes tones darker than this (0.4.x+: mid-tones stay as they are)
 BRIGHTNESS = 0.8              # at +100 the mid-tones' curve is x ** 0.57
 
 
@@ -143,11 +144,25 @@ def lookup_table(a: Adjustments) -> list[int]:
             x = min(1.0, v / 255 * gain)
             if a.brightness:
                 x = x ** (2 ** (-BRIGHTNESS * a.brightness / 100))  # a curve: brighter/darker mid-tones
-            x += shadows * (1 - x) ** 2 * (1 - (1 - x) ** 6)  # the dark part, not pure black
+            x = shadow_curve(x, shadows)                       # the dark part only, not pure black
             x += highlights * x ** 2 * (1 - x ** 6)            # the bright part, not pure white
             x = (x - 0.5) * contrast + 0.5
             table.append(max(0, min(255, round(x * 255))))
     return table
+
+
+def _shadow_bump(x: float) -> float:
+    """How much Shadows lifts a tone (0..1): most around 0.18, nothing at black or from SHADOW_REACH up."""
+    return 4 * x * (1 - x / SHADOW_REACH) ** 2 if x < SHADOW_REACH else 0.0
+
+
+def shadow_curve(x: float, amount: float) -> float:
+    """Shadows: lighter (amount > 0) lifts the dark tones; darker deepens them, never crushing them to black.
+    Mid-tones and brights stay as they are (before, +100 lifted mid-grey by 44 of 255 levels)."""
+    if amount >= 0:
+        return x + amount * _shadow_bump(x)
+    weight = (1 - x / SHADOW_REACH) ** 2 if x < SHADOW_REACH else 0.0
+    return x * (1 + amount / LIFT * weight)
 
 
 # ------------------------------------------------------------------ auto and white balance
@@ -222,7 +237,7 @@ def auto(image: Image.Image) -> dict[str, int]:
         out["brightness"] = 0
 
     x = _percentile(hist, 0.10) / 255
-    shape = LIFT * (1 - x) ** 2 * (1 - (1 - x) ** 6)
+    shape = LIFT * _shadow_bump(x)
     out["shadows"] = _slider((0.18 - x) / shape) if x < 0.18 and shape > 0.01 else 0
     out["shadows"] = max(0, out["shadows"])
 

@@ -36,6 +36,14 @@ def test_each_slider_goes_the_right_way():
     assert apply(light, Adjustments(highlights=-80)).getpixel((0, 0))[0] < 205  # highlights darker
     black = Image.new("RGB", (1, 1), (0, 0, 0))
     assert apply(black, Adjustments(shadows=100)).getpixel((0, 0)) == (0, 0, 0)  # black stays black
+    mid = Image.new("RGB", (1, 1), (128, 128, 128))
+    assert apply(mid, Adjustments(shadows=100)).getpixel((0, 0))[0] - 128 <= 4  # mid-grey stays (only shadows)
+    assert apply(mid, Adjustments(shadows=-100)).getpixel((0, 0))[0] >= 126
+    assert apply(dark, Adjustments(shadows=-80)).getpixel((0, 0))[0] < 40  # darker
+    assert apply(dark, Adjustments(shadows=-100)).getpixel((0, 0))[0] > 0  # not crushed to black
+    for amount in (-100, 100):  # the curve never turns back on itself
+        table = lookup_table(Adjustments(shadows=amount))[:256]
+        assert table == sorted(table)
 
 
 def test_which_files():

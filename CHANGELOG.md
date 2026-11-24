@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.12
+
+- Edit: Shadows only changes the dark tones now. Before, +100 also lifted mid-grey by 44 of 255 levels (and even
+  light tones a little), so it brightened the whole photo. Shadows darker no longer crushes dark tones to black.
+  Auto's Shadows suggestion uses the new curve. (The Android app edits the same way.)
+- Edit: Brightness is under Contrast (on the phone too).
+
 ## 0.7.11
 
 - Music: ✂ Trim… (right-click a song, or Ctrl+T): drag the handles on the song's waveform (or type the times) to

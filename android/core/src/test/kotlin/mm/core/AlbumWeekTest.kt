@@ -29,3 +29,16 @@ class ApplyingTest {
         assertEquals(XmpFields(keywords = listOf("Me", "josh")), f.copy(label = "Red", bookmarked = true).applying(Change.ClearLabels))
     }
 }
+
+class ShadowsTest {
+    /** The same numbers as photo_edit.py gives (the PC and the phone edit alike). */
+    @Test fun sameAsThePc() {
+        val at = intArrayOf(0, 10, 30, 46, 90, 128, 200, 255)
+        fun table(sh: Int) = lookupTable(Adjustments(shadows = sh, contrast = 20, brightness = 10))[0].let { t -> at.map { t[it] } }
+        assertEquals(listOf(0, 19, 79, 104, 122, 135, 221, 255), table(100))
+        assertEquals(listOf(0, 0, 0, 6, 75, 134, 221, 255), table(-100))
+        assertEquals(listOf(0, 0, 38, 61, 101, 135, 221, 255), table(40))
+        val mid = lookupTable(Adjustments(shadows = 100))[0][128]
+        kotlin.test.assertTrue(mid - 128 <= 4, "mid-grey moved to $mid")
+    }
+}

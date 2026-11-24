@@ -84,8 +84,8 @@ private data class Row5(val key: String, val name: String, val left: String, val
 private val LIGHT = listOf(
     Row5("yellow", "Blue ↔ Yellow", "Bluer", "Yellower", listOf(Color(0xFF3B78D8), Color(0xFF777777), Color(0xFFD8B83B))),
     Row5("red", "Green ↔ Red", "Greener", "Redder", listOf(Color(0xFF3BB85A), Color(0xFF777777), Color(0xFFD84A3B))),
-    Row5("brightness", "Brightness", "Darker", "Brighter", listOf(Color(0xFF222222), Color(0xFFDDDDDD))),
     Row5("contrast", "Contrast", "Less", "More", listOf(Color(0xFF555555), Color(0xFF999999))),
+    Row5("brightness", "Brightness", "Darker", "Brighter", listOf(Color(0xFF222222), Color(0xFFDDDDDD))),  // under Contrast
     Row5("shadows", "Shadows", "Darker", "Lighter", listOf(Color(0xFF111111), Color(0xFF888888))),
     Row5("highlights", "Highlights", "Darker", "Brighter", listOf(Color(0xFF666666), Color(0xFFEEEEEE))),
 )
@@ -350,6 +350,7 @@ private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, hol
     val swipe by rememberUpdatedState(onSwipe)
     var offset by remember { mutableStateOf(Offset.Zero) }
     var area by remember { mutableStateOf(Size.Zero) }
+    var lastTap by remember { mutableStateOf(0L) }  // (a second tap soon after: double tap)
 
     fun fitted(): Rect {
         if (area.width == 0f) return Rect.Zero
@@ -428,6 +429,11 @@ private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, hol
                 pressed[0].consume()
             }
             if (held) onHold(false)
+            // A double tap: the whole photo again (zoom back to fit).
+            val now = System.currentTimeMillis()
+            if (!moved && !held && !pinched && !cropping && !onLine && now - startTime < 250) {
+                if (now - lastTap < 350) { scale = 1f; offset = Offset.Zero; lastTap = 0L } else lastTap = now
+            }
             // A quick sideways swipe (not zoomed in, not on the line, not cropping): the next or previous photo.
             val dx = last.x - startPos.x
             val dy = last.y - startPos.y

@@ -43,8 +43,8 @@ PREVIEW_PIXELS = 2400  # sharp enough for a maximized window
 SLIDERS = [
     ("yellow", "Blue ↔ Yellow", "Bluer", "Yellower", ("#3b78d8", "#777777", "#d8b83b")),
     ("red", "Green ↔ Red", "Greener", "Redder", ("#3bb85a", "#777777", "#d84a3b")),
-    ("brightness", "Brightness", "Darker", "Brighter", ("#222222", "#dddddd")),
     ("contrast", "Contrast", "Less", "More", ("#555555", "#999999")),
+    ("brightness", "Brightness", "Darker", "Brighter", ("#222222", "#dddddd")),  # under Contrast (user's request)
     ("shadows", "Shadows", "Darker", "Lighter", ("#111111", "#888888")),
     ("highlights", "Highlights", "Darker", "Brighter", ("#666666", "#eeeeee")),
 ]

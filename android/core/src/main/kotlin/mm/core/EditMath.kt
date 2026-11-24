@@ -53,6 +53,7 @@ private val TINT = doubleArrayOf(0.30, -0.24, 0.0)
 private const val CONTRAST_UP = 1.2
 private const val CONTRAST_DOWN = 0.8
 private const val LIFT = 0.7
+private const val SHADOW_REACH = 0.55  // shadows only changes tones darker than this (as photo_edit.py)
 private const val BRIGHTNESS = 0.8
 
 /** (field, hue in degrees, reach either side) as in photo_edit.SATURATION. */
@@ -60,6 +61,16 @@ private val HUES = listOf(0.0 to 25.0, 30.0 to 20.0, 55.0 to 25.0, 120.0 to 45.0
     275.0 to 30.0, 320.0 to 30.0)
 
 fun channelGains(yellow: Double, red: Double) = DoubleArray(3) { 1 + WARM[it] * yellow + TINT[it] * red }
+
+/** How much Shadows lifts a tone: most around 0.18, nothing at black or from SHADOW_REACH up (photo_edit._shadow_bump). */
+fun shadowBump(x: Double) = if (x < SHADOW_REACH) 4 * x * (1 - x / SHADOW_REACH).pow(2) else 0.0
+
+/** Shadows: lighter lifts the dark tones, darker deepens them (never to black); mid-tones stay (photo_edit.shadow_curve). */
+fun shadowCurve(x: Double, amount: Double): Double {
+    if (amount >= 0) return x + amount * shadowBump(x)
+    val weight = if (x < SHADOW_REACH) (1 - x / SHADOW_REACH).pow(2) else 0.0
+    return x * (1 + amount / LIFT * weight)
+}
 
 /** 3 × 256 curves (red, green, blue). */
 fun lookupTable(a: Adjustments): Array<IntArray> {
@@ -72,7 +83,7 @@ fun lookupTable(a: Adjustments): Array<IntArray> {
         IntArray(256) { v ->
             var x = min(1.0, v / 255.0 * gains[ch])
             if (a.brightness != 0) x = x.pow(2.0.pow(-BRIGHTNESS * a.brightness / 100.0))
-            x += shadows * (1 - x).pow(2) * (1 - (1 - x).pow(6))
+            x = shadowCurve(x, shadows)
             x += highlights * x.pow(2) * (1 - x.pow(6))
             x = (x - 0.5) * contrast + 0.5
             (x * 255).roundToInt().coerceIn(0, 255)
@@ -301,7 +312,7 @@ fun auto(p: Pixels): Map<String, Int> {
     out["brightness"] = if (spread >= 30 && middle > 0.02 && middle < 0.98)
         slider(-log2(ln(0.45) / ln(middle)) / BRIGHTNESS * 0.7).coerceIn(-60, 60) else 0
     var x = percentile(hist, 0.10) / 255.0
-    var shape = LIFT * (1 - x).pow(2) * (1 - (1 - x).pow(6))
+    var shape = LIFT * shadowBump(x)
     out["shadows"] = if (x < 0.18 && shape > 0.01) max(0, slider((0.18 - x) / shape)) else 0
     x = percentile(hist, 0.90) / 255.0
     shape = LIFT * x.pow(2) * (1 - x.pow(6))
