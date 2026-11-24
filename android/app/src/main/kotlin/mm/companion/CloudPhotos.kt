@@ -7,7 +7,15 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import mm.core.XmpFields
 import mm.core.readFields
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.json.JSONArray
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -71,6 +79,54 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
         return (0 until a.length()).map { a.getJSONObject(it) }.map {
             Folder(it.getString("id"), it.getString("name"), it.getInt("count"), it.optString("path"), it.optInt("depth"))
         }
+    }
+
+    /**
+     * Every folder in Pictures, read from OneDrive four at a time; [onUpdate] gets the tree so far each time a
+     * folder has been read (folders not read yet show OneDrive's count of what's in them). Saved for next time.
+     */
+    suspend fun walkFolders(onUpdate: (List<Folder>) -> Unit): List<Folder> {
+        // Pictures (if OneDrive won't give it, Camera Roll at least)
+        val root = try { drive.pictures() } catch (e: OneDrive.GraphError) { drive.cameraRoll() }
+        val subs = ConcurrentHashMap<String, List<OneDrive.Entry>>()
+        val counts = ConcurrentHashMap<String, Int>()
+        val guess = ConcurrentHashMap<String, Int>()
+        val gate = Semaphore(4)
+        val seen = AtomicInteger(0)
+
+        fun tree(): List<Folder> {
+            val out = mutableListOf<Folder>()
+            fun add(id: String, name: String, path: String, depth: Int) {
+                out.add(Folder(CLOUD + id, name, counts[id] ?: guess[id] ?: 0, path, depth))
+                subs[id]?.forEach { add(it.id, it.name, "$path/${it.name}", depth + 1) }
+            }
+            add(root.id, root.name, root.name, 0)
+            return out
+        }
+
+        fun CoroutineScope.visit(id: String, depth: Int): Job = launch {
+            val inside = try {
+                gate.withPermit { drive.children(id) }
+            } catch (e: Exception) {
+                if (id == root.id) throw e
+                return@launch  // one folder that can't be read: the rest still are
+            }
+            counts[id] = inside.count { !it.folder && it.mime.startsWith("image/") }
+            // year and month folders newest first; others A–Z
+            val folders = inside.filter { it.folder }.sortedWith(compareBy<OneDrive.Entry>(
+                { it.name.toIntOrNull()?.let { n -> -n } ?: Int.MAX_VALUE }, { it.name.lowercase() }))
+            folders.forEach { guess[it.id] = it.childCount }
+            subs[id] = folders
+            onUpdate(tree())
+            if (depth < 6 && seen.addAndGet(folders.size) < 400) folders.forEach { visit(it.id, depth + 1) }
+        }
+
+        coroutineScope { visit(root.id, 0) }  // (returns once every folder has been read)
+        val out = tree()
+        File(dir, "pictures.json").writeText(JSONArray(out.map {
+            JSONObject().put("id", it.id).put("name", it.name).put("count", it.count).put("path", it.path).put("depth", it.depth)
+        }).toString())
+        return out
     }
 
     fun newFolder(parent: Folder, name: String): String = drive.newFolder(parent.id.removePrefix(CLOUD), name)

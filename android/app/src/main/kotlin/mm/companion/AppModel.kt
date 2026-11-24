@@ -172,6 +172,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         inCloud = on
         folder = if (on) cloudFolder else phoneFolder
         photos = emptyList()
+        folders = emptyList()  // (not the other side's folders while these are read)
         reload()
     }
 
@@ -181,18 +182,48 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         Sync.schedule(app())
     }
 
+    /** Reading OneDrive's folder tree now (it can take a while: one request per folder). */
+    var walking by mutableStateOf(false)
+
+    private fun openCloudDefault(list: List<Folder>) {
+        val keep = folder?.let { f -> list.firstOrNull { it.id == f.id } } ?: folder?.takeIf { it.inCloud }
+        open(keep ?: list.firstOrNull { it.name.equals("Camera Roll", true) } ?: list.firstOrNull { it.count > 0 }
+            ?: list.firstOrNull())
+    }
+
     fun reload() = viewModelScope.launch {
         if (inCloud) {
-            val online = cloud.online()
-            val list = withContext(Dispatchers.IO) { runCatching { cloud.folders(online) } }
-            list.exceptionOrNull()?.let { message = "OneDrive: ${it.message}" }
-            folders = list.getOrDefault(emptyList())
-            val keep = folder?.let { f -> folders.firstOrNull { it.id == f.id } }
-            open(keep ?: folders.firstOrNull { it.name.equals("Camera Roll", true) } ?: folders.firstOrNull { it.count > 0 }
-                ?: folders.firstOrNull())
+            // What was seen last time, at once (also with no connection)…
+            val cached = withContext(Dispatchers.IO) { runCatching { cloud.folders(false) }.getOrNull() }
+            if (cached != null) { folders = cached; openCloudDefault(cached) }
+            if (!cloud.online()) {
+                if (cached == null) message = "OneDrive: ${cloud.whyOffline()}"
+                return@launch
+            }
+            if (walking) return@launch
+            walking = true
+            // …the first time: Camera Roll's photos straight away, while the folders are read
+            if (cached == null && folder == null) {
+                withContext(Dispatchers.IO) { runCatching { drive.cameraRoll() }.getOrNull() }?.let {
+                    open(Folder(CloudPhotos.CLOUD + it.id, it.name, it.childCount, "Pictures/${it.name}", 1))
+                }
+            }
+            // …then the whole tree from OneDrive, shown as it's found.
+            val result = withContext(Dispatchers.IO) {
+                runCatching { cloud.walkFolders { list -> viewModelScope.launch { if (inCloud) folders = list } } }
+            }
+            walking = false
+            if (!inCloud) return@launch
+            result.onSuccess { list ->
+                folders = list
+                if (folder == null) openCloudDefault(list)
+                else list.firstOrNull { it.id == folder?.id }?.let { folder = it }
+            }.onFailure { message = "OneDrive: ${it.message}" }
             return@launch
         }
-        found = withContext(Dispatchers.IO) { store.folders() }
+        val list0 = withContext(Dispatchers.IO) { store.folders() }
+        if (inCloud) return@launch  // switched to OneDrive meanwhile
+        found = list0
         val list = arrange(found)
         folders = list
         val keep = folder?.let { f -> list.firstOrNull { it.id == f.id } }
