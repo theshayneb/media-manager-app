@@ -7,15 +7,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import mm.core.XmpFields
 import mm.core.readFields
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import org.json.JSONArray
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -30,6 +22,10 @@ import java.time.ZoneId
  */
 class CloudPhotos(private val context: Context, private val drive: OneDrive) {
     private val dir = File(context.cacheDir, "onedrive").apply { mkdirs() }
+
+    init {  // the folder lists of 0.1.23–0.1.25 (all of Pictures): not used any more
+        listOf("pictures.json", "folders-v3.json").forEach { File(dir, it).delete() }
+    }
     private val prefs = context.getSharedPreferences("onedrive", Context.MODE_PRIVATE)
 
     /** OneDrive only on Wi-Fi (Settings). */
@@ -53,83 +49,49 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
     fun whyOffline(): String = if (wifiOnly) "Not on Wi-Fi (OneDrive is set to Wi-Fi only)" else "No internet connection"
 
     // ---------------------------------------------------------------- folders
-    /** Every folder in OneDrive's Pictures (Camera Roll among them), as a tree, from OneDrive or as last seen. */
+    /** Camera Roll and its folders (years, and their months), from OneDrive, or as last seen. */
     fun folders(online: Boolean): List<Folder> {
-        val saved = File(dir, "folders-v3.json")
+        val saved = File(dir, "folders.json")
         if (online) {
+            val root = drive.cameraRoll()
             val out = mutableListOf<Folder>()
-            fun walk(id: String, name: String, path: String, depth: Int) {
-                val inside = drive.children(id)
-                out.add(Folder(CLOUD + id, name, inside.count { !it.folder && it.mime.startsWith("image/") }, path, depth))
-                if (depth >= 6 || out.size > 400) return  // (enough for any photo folder tree)
-                // year and month folders newest first; others A–Z
-                val subs = inside.filter { it.folder }.sortedWith(compareBy<OneDrive.Entry>(
-                    { it.name.toIntOrNull()?.let { n -> -n } ?: Int.MAX_VALUE }, { it.name.lowercase() }))
-                for (f in subs) walk(f.id, f.name, "$path/${f.name}", depth + 1)
+            val top = drive.children(root.id)
+            out.add(Folder(CLOUD + root.id, "Camera Roll", top.count { !it.folder }))
+            for (y in top.filter { it.folder }.sortedByDescending { it.name }) {
+                val inside = drive.children(y.id)
+                val subs = inside.filter { it.folder }.sortedByDescending { it.name }
+                if (inside.any { !it.folder } || subs.isEmpty()) {
+                    out.add(Folder(CLOUD + y.id, "Camera Roll › ${y.name}", inside.count { !it.folder }))
+                }
+                subs.forEach { m -> out.add(Folder(CLOUD + m.id, "Camera Roll › ${y.name} › ${m.name}", m.childCount)) }
             }
-            val root = drive.pictures()
-            walk(root.id, root.name, root.name, 0)
-            saved.writeText(JSONArray(out.map {
-                JSONObject().put("id", it.id).put("name", it.name).put("count", it.count).put("path", it.path).put("depth", it.depth)
-            }).toString())
+            saved.writeText(JSONArray(out.map { JSONObject().put("id", it.id).put("name", it.name).put("count", it.count) }).toString())
             return out
         }
         if (!saved.exists()) throw IOException(whyOffline())
         val a = JSONArray(saved.readText())
-        return (0 until a.length()).map { a.getJSONObject(it) }.map {
-            Folder(it.getString("id"), it.getString("name"), it.getInt("count"), it.optString("path"), it.optInt("depth"))
-        }
+        return (0 until a.length()).map { a.getJSONObject(it) }.map { Folder(it.getString("id"), it.getString("name"), it.getInt("count")) }
     }
 
-    /**
-     * Every folder in Pictures, read from OneDrive four at a time; [onUpdate] gets the tree so far each time a
-     * folder has been read (folders not read yet show OneDrive's count of what's in them). Saved for next time.
-     */
-    suspend fun walkFolders(onUpdate: (List<Folder>) -> Unit): List<Folder> {
-        // Only these (the user's choice; the rest of Pictures has far too many photos to go through):
-        // Camera Roll, and Pictures › 2026 and 2027, each with everything inside it.
-        val roots = listOfNotNull(drive.cameraRoll()) + YEARS.mapNotNull { drive.inPictures(it) }
-        val subs = ConcurrentHashMap<String, List<OneDrive.Entry>>()
-        val counts = ConcurrentHashMap<String, Int>()
-        val guess = ConcurrentHashMap<String, Int>()
-        val gate = Semaphore(4)
-        val seen = AtomicInteger(0)
-
-        fun tree(): List<Folder> {
-            val out = mutableListOf<Folder>()
-            fun add(id: String, name: String, path: String, depth: Int) {
-                out.add(Folder(CLOUD + id, name, counts[id] ?: guess[id] ?: 0, path, depth))
-                subs[id]?.forEach { add(it.id, it.name, "$path/${it.name}", depth + 1) }
-            }
-            roots.forEach { add(it.id, it.name, it.name, 0) }
+    // ---------------------------------------------------------------- where photos can be moved to
+    /** Pictures › 2026 and 2027 (the user's choice): photos are moved into them or their folders, but they're never
+     *  opened here, so nothing in them is downloaded; only their folders' names are read, when asked for. */
+    fun moveRoots(online: Boolean): List<Folder> {
+        val saved = File(dir, "move-roots.json")
+        if (online) {
+            val out = MOVE_TO.mapNotNull { drive.inPictures(it) }.map { Folder(CLOUD + it.id, it.name, 0, "Pictures/${it.name}", 0) }
+            saved.writeText(JSONArray(out.map { JSONObject().put("id", it.id).put("name", it.name).put("path", it.path) }).toString())
             return out
         }
-
-        fun CoroutineScope.visit(id: String, depth: Int): Job = launch {
-            val inside = try {
-                gate.withPermit { drive.children(id) }
-            } catch (e: Exception) {
-                if (id == roots.first().id) throw e
-                return@launch  // one folder that can't be read: the rest still are
-            }
-            counts[id] = inside.count { !it.folder && it.mime.startsWith("image/") }
-            // year and month folders newest first; others A–Z
-            val folders = inside.filter { it.folder }.sortedWith(compareBy<OneDrive.Entry>(
-                { it.name.toIntOrNull()?.let { n -> -n } ?: Int.MAX_VALUE }, { it.name.lowercase() }))
-            folders.forEach { guess[it.id] = it.childCount }
-            subs[id] = folders
-            onUpdate(tree())
-            if (depth < 6 && seen.addAndGet(folders.size) < 2000) folders.forEach { visit(it.id, depth + 1) }
-        }
-
-        File(dir, "pictures.json").delete()  // (0.1.23–0.1.24's list of all of Pictures)
-        coroutineScope { roots.forEach { visit(it.id, 0) } }  // (returns once every folder has been read)
-        val out = tree()
-        File(dir, "folders-v3.json").writeText(JSONArray(out.map {
-            JSONObject().put("id", it.id).put("name", it.name).put("count", it.count).put("path", it.path).put("depth", it.depth)
-        }).toString())
-        return out
+        if (!saved.exists()) throw IOException(whyOffline())
+        val a = JSONArray(saved.readText())
+        return (0 until a.length()).map { a.getJSONObject(it) }.map { Folder(it.getString("id"), it.getString("name"), 0, it.optString("path"), 0) }
     }
+
+    /** The folders directly inside one (names only), A–Z. */
+    fun subfolders(parent: Folder): List<Folder> =
+        drive.subfolders(parent.id.removePrefix(CLOUD)).sortedBy { it.name.lowercase() }
+            .map { Folder(CLOUD + it.id, it.name, 0, "${parent.path}/${it.name}", parent.depth + 1) }
 
     fun newFolder(parent: Folder, name: String): String = drive.newFolder(parent.id.removePrefix(CLOUD), name)
 
@@ -234,8 +196,8 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
     companion object {
         const val CLOUD = "cloud:"
 
-        /** The folders in Pictures shown besides Camera Roll (the user's choice). */
-        val YEARS = listOf("2026", "2027")
+        /** The folders in Pictures that photos can be moved into (the user's choice). */
+        val MOVE_TO = listOf("2026", "2027")
 
         /** A photo id for a OneDrive file (negative, so never the same as a phone photo's). */
         fun cloudPhotoId(item: String): Long = fnv(item) or Long.MIN_VALUE

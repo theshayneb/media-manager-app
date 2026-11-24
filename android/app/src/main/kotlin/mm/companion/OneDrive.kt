@@ -272,8 +272,22 @@ class OneDrive(private val context: Context) {
         if (e.code == 404) null else throw e
     }
 
-    /** OneDrive's Pictures folder. */
-    fun pictures(): Entry = entry(get("/me/drive/special/photos?select=id,name,folder,lastModifiedDateTime,cTag"))
+    /** The folders directly inside one: asked for folders only where OneDrive allows it (so a folder with
+     *  thousands of photos isn't listed photo by photo), else from the whole list. */
+    fun subfolders(id: String): List<Entry> = try {
+        val out = mutableListOf<Entry>()
+        var url: String? = "$GRAPH/me/drive/items/$id/children?\$filter=folder%20ne%20null&\$select=id,name,folder&\$top=200"
+        while (url != null) {
+            val o = JSONObject(String(request("GET", url, null, null).second))
+            val arr = o.getJSONArray("value")
+            for (k in 0 until arr.length()) out.add(entry(arr.getJSONObject(k)))
+            url = o.optString("@odata.nextLink").takeIf { it.isNotEmpty() }
+        }
+        out.filter { it.folder }
+    } catch (e: GraphError) {
+        if (e.code != 400 && e.code != 501) throw e
+        children(id).filter { it.folder }
+    }
 
     /** To OneDrive's recycle bin (it can be restored there). */
     fun delete(id: String) {

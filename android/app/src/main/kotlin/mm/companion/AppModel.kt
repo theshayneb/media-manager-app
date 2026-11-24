@@ -182,43 +182,17 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         Sync.schedule(app())
     }
 
-    /** Reading OneDrive's folder tree now (it can take a while: one request per folder). */
-    var walking by mutableStateOf(false)
-
-    private fun openCloudDefault(list: List<Folder>) {
-        val keep = folder?.let { f -> list.firstOrNull { it.id == f.id } } ?: folder?.takeIf { it.inCloud }
-        open(keep ?: list.firstOrNull { it.name.equals("Camera Roll", true) } ?: list.firstOrNull { it.count > 0 }
-            ?: list.firstOrNull())
-    }
-
     fun reload() = viewModelScope.launch {
         if (inCloud) {
-            // What was seen last time, at once (also with no connection)…
-            val cached = withContext(Dispatchers.IO) { runCatching { cloud.folders(false) }.getOrNull() }
-            if (cached != null) { folders = cached; openCloudDefault(cached) }
-            if (!cloud.online()) {
-                if (cached == null) message = "OneDrive: ${cloud.whyOffline()}"
-                return@launch
+            val online = cloud.online()
+            val list = withContext(Dispatchers.IO) {
+                runCatching { cloud.folders(online) }.recoverCatching { if (online) cloud.folders(false) else throw it }
             }
-            if (walking) return@launch
-            walking = true
-            // …the first time: Camera Roll's photos straight away, while the folders are read
-            if (cached == null && folder == null) {
-                withContext(Dispatchers.IO) { runCatching { drive.cameraRoll() }.getOrNull() }?.let {
-                    open(Folder(CloudPhotos.CLOUD + it.id, it.name, it.childCount, "Pictures/${it.name}", 1))
-                }
-            }
-            // …then the whole tree from OneDrive, shown as it's found.
-            val result = withContext(Dispatchers.IO) {
-                runCatching { cloud.walkFolders { list -> viewModelScope.launch { if (inCloud) folders = list } } }
-            }
-            walking = false
-            if (!inCloud) return@launch
-            result.onSuccess { list ->
-                folders = list
-                if (folder == null) openCloudDefault(list)
-                else list.firstOrNull { it.id == folder?.id }?.let { folder = it }
-            }.onFailure { message = "OneDrive: ${it.message}" }
+            if (!inCloud) return@launch  // switched back to the phone meanwhile
+            list.exceptionOrNull()?.let { message = "OneDrive: ${it.message}" }
+            folders = list.getOrDefault(emptyList())
+            val keep = folder?.let { f -> folders.firstOrNull { it.id == f.id } }
+            open(keep ?: folders.firstOrNull { it.name.equals("Camera Roll", true) } ?: folders.firstOrNull())
             return@launch
         }
         val list0 = withContext(Dispatchers.IO) { store.folders() }
@@ -559,15 +533,24 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** A new folder in OneDrive (needs a connection now); the folder list is read again. Returns it, or null. */
+    /** Where photos can be moved to: Pictures › 2026 and 2027 (from OneDrive, or as last seen). */
+    suspend fun moveRoots(): List<Folder> = withContext(Dispatchers.IO) {
+        runCatching { cloud.moveRoots(cloud.online()) }.recoverCatching { cloud.moveRoots(false) }
+            .getOrElse { withContext(Dispatchers.Main) { message = "OneDrive: ${it.message}" }; emptyList() }
+    }
+
+    /** The folders inside one (their names only; needs a connection). */
+    suspend fun subfolders(parent: Folder): List<Folder>? = withContext(Dispatchers.IO) {
+        if (!cloud.online()) return@withContext null
+        runCatching { cloud.subfolders(parent) }.getOrNull()
+    }
+
+    /** A new folder inside one (needs a connection now). Returns it, or null. */
     suspend fun newFolder(parent: Folder, name: String): Folder? {
         if (!cloud.online()) { message = "A new folder needs a connection: ${cloud.whyOffline()}"; return null }
         val made = withContext(Dispatchers.IO) { runCatching { cloud.newFolder(parent, name.trim()) } }
         val id = made.getOrElse { message = "Couldn't make the folder: ${it.message}"; return null }
-        val list = withContext(Dispatchers.IO) { runCatching { cloud.folders(true) }.getOrNull() }
-        if (list != null) folders = list
-        return folders.firstOrNull { it.id == CloudPhotos.CLOUD + id }
-            ?: Folder(CloudPhotos.CLOUD + id, name.trim(), 0, "${parent.path}/${name.trim()}", parent.depth + 1)
+        return Folder(CloudPhotos.CLOUD + id, name.trim(), 0, "${parent.path}/${name.trim()}", parent.depth + 1)
     }
 
     /** Forget every change still waiting for OneDrive (the phone's photos keep them). */

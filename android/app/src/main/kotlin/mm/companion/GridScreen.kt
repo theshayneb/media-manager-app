@@ -129,8 +129,6 @@ private fun TopBar(model: AppModel) {
                         }
                     }
                     DropdownMenu(open, { open = false }) {
-                        if (model.inCloud && model.walking) Text("Reading your OneDrive folders…", color = Dim, fontSize = 12.sp,
-                            modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 4.dp))
                         val favs = model.folders.count { model.isFavorite(it) }
                         if (favs > 0) Text("Favourites", color = Dim, fontSize = 12.sp,
                             modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 2.dp))
