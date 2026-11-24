@@ -61,6 +61,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun start() {
         lastEdit = app().getSharedPreferences("edit", 0).getString("last", null)?.let { parseLast(it) }
             ?: shared.lastEdit
+        inCloud = drive.signedIn  // opens on OneDrive's Camera Roll (the phone's folders when not signed in)
         reload()
         Sync.schedule(app())
         refreshPending()
