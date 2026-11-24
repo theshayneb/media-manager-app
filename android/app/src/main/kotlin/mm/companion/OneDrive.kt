@@ -265,6 +265,13 @@ class OneDrive(private val context: Context) {
             .getString("id")
     }
 
+    /** A folder directly inside Pictures ("2026"), or null if there's none. */
+    fun inPictures(name: String): Entry? = try {
+        entry(get("/me/drive/special/photos:/${enc(name)}?select=id,name,folder,lastModifiedDateTime,cTag")).takeIf { it.folder }
+    } catch (e: GraphError) {
+        if (e.code == 404) null else throw e
+    }
+
     /** OneDrive's Pictures folder. */
     fun pictures(): Entry = entry(get("/me/drive/special/photos?select=id,name,folder,lastModifiedDateTime,cTag"))
 

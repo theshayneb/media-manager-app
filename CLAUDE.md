@@ -66,8 +66,8 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   queued (SyncQueue) to be done to the same photo in OneDrive's Camera Roll (Microsoft Graph, device-code
   sign-in, the user's own Azure app ID). Browsing OneDrive (☁ in the folder menu): `CloudPhotos.kt` lists Camera Roll and its
   year/month folders, keeps lists, thumbnails and opened photos in the app's cache (works offline), changes the
-  cached copy and queues the change by item id (`onedrive-items`); all of OneDrive's Pictures as a tree (`CloudPhotos.folders`,
-  Folder.depth); 📁 Move (selection bar + Edit, `MoveDialog.kt`, + New folder) = Change.Move, done by the sync (`OneDrive.move`); Settings › Wi-Fi only (Sync: UNMETERED). Look (user's approved redesign mock-up): album week headers (`core` AlbumWeek.kt = the PC's
+  cached copy and queues the change by item id (`onedrive-items`); only Camera Roll + Pictures › 2026 and 2027 (`CloudPhotos.YEARS`; the user's
+  choice: the rest has too many photos), each with all its folders, as a tree read 4 at a time (`walkFolders`, Folder.depth); 📁 Move (selection bar + Edit, `MoveDialog.kt`, + New folder) = Change.Move, done by the sync (`OneDrive.move`); Settings › Wi-Fi only (Sync: UNMETERED). Look (user's approved redesign mock-up): album week headers (`core` AlbumWeek.kt = the PC's
   album_week), Phone/OneDrive switch, yellow dot = change waiting, label strip, line icons (`Icons.kt`), Tags panel
   keyword chips filled = all selected have it / outlined = some (tap: onto all, or off all), Settings: sync first, one row per photo. `media_manager/companion.py` writes OneDrive\Documents\Phone\Media Manager\companion.json.
   `media_manager/phone_steam.py`: the phone's Steam "Import now" (steam-request.json → the PC runs Photos' Steam import

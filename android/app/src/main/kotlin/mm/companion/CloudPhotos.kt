@@ -55,7 +55,7 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
     // ---------------------------------------------------------------- folders
     /** Every folder in OneDrive's Pictures (Camera Roll among them), as a tree, from OneDrive or as last seen. */
     fun folders(online: Boolean): List<Folder> {
-        val saved = File(dir, "pictures.json")
+        val saved = File(dir, "folders-v3.json")
         if (online) {
             val out = mutableListOf<Folder>()
             fun walk(id: String, name: String, path: String, depth: Int) {
@@ -86,8 +86,9 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
      * folder has been read (folders not read yet show OneDrive's count of what's in them). Saved for next time.
      */
     suspend fun walkFolders(onUpdate: (List<Folder>) -> Unit): List<Folder> {
-        // Pictures (if OneDrive won't give it, Camera Roll at least)
-        val root = try { drive.pictures() } catch (e: OneDrive.GraphError) { drive.cameraRoll() }
+        // Only these (the user's choice; the rest of Pictures has far too many photos to go through):
+        // Camera Roll, and Pictures › 2026 and 2027, each with everything inside it.
+        val roots = listOfNotNull(drive.cameraRoll()) + YEARS.mapNotNull { drive.inPictures(it) }
         val subs = ConcurrentHashMap<String, List<OneDrive.Entry>>()
         val counts = ConcurrentHashMap<String, Int>()
         val guess = ConcurrentHashMap<String, Int>()
@@ -100,7 +101,7 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
                 out.add(Folder(CLOUD + id, name, counts[id] ?: guess[id] ?: 0, path, depth))
                 subs[id]?.forEach { add(it.id, it.name, "$path/${it.name}", depth + 1) }
             }
-            add(root.id, root.name, root.name, 0)
+            roots.forEach { add(it.id, it.name, it.name, 0) }
             return out
         }
 
@@ -108,7 +109,7 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
             val inside = try {
                 gate.withPermit { drive.children(id) }
             } catch (e: Exception) {
-                if (id == root.id) throw e
+                if (id == roots.first().id) throw e
                 return@launch  // one folder that can't be read: the rest still are
             }
             counts[id] = inside.count { !it.folder && it.mime.startsWith("image/") }
@@ -118,12 +119,13 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
             folders.forEach { guess[it.id] = it.childCount }
             subs[id] = folders
             onUpdate(tree())
-            if (depth < 6 && seen.addAndGet(folders.size) < 400) folders.forEach { visit(it.id, depth + 1) }
+            if (depth < 6 && seen.addAndGet(folders.size) < 2000) folders.forEach { visit(it.id, depth + 1) }
         }
 
-        coroutineScope { visit(root.id, 0) }  // (returns once every folder has been read)
+        File(dir, "pictures.json").delete()  // (0.1.23–0.1.24's list of all of Pictures)
+        coroutineScope { roots.forEach { visit(it.id, 0) } }  // (returns once every folder has been read)
         val out = tree()
-        File(dir, "pictures.json").writeText(JSONArray(out.map {
+        File(dir, "folders-v3.json").writeText(JSONArray(out.map {
             JSONObject().put("id", it.id).put("name", it.name).put("count", it.count).put("path", it.path).put("depth", it.depth)
         }).toString())
         return out
@@ -231,6 +233,9 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
 
     companion object {
         const val CLOUD = "cloud:"
+
+        /** The folders in Pictures shown besides Camera Roll (the user's choice). */
+        val YEARS = listOf("2026", "2027")
 
         /** A photo id for a OneDrive file (negative, so never the same as a phone photo's). */
         fun cloudPhotoId(item: String): Long = fnv(item) or Long.MIN_VALUE
