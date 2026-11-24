@@ -196,6 +196,10 @@ fun EditScreen(model: AppModel, photo: Photo) {
                     }
                 }
                 Tool(if (full) Line.ExitFullScreen else Line.FullScreen, if (full) "Show the sliders" else "Full screen") { full = !full }
+                if (photo.inCloud) Tool(Line.Folder, "Move") {  // to another Pictures folder; then the next photo
+                    val next = model.neighbour(photo, 1) ?: model.neighbour(photo, -1)
+                    model.moving = MoveRequest(listOf(photo)) { if (next != null) model.editing = next else leave() }
+                }
                 // Delete: then the next photo (or the one before), else the grid.
                 Tool(Line.Delete, "Delete") {
                     val next = model.neighbour(photo, 1) ?: model.neighbour(photo, -1)

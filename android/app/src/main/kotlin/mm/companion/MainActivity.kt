@@ -104,6 +104,7 @@ fun App(model: AppModel) {
     LaunchedEffect(model.trashRequest) {
         model.trashRequest?.let { trash.launch(IntentSenderRequest.Builder(it.sender).build()) }
     }
+    model.moving?.let { MoveDialog(model, it) }
     // Deleting OneDrive photos: asked here (they go to OneDrive's recycle bin).
     model.cloudDelete?.let { d ->
         val n = d.photos.size

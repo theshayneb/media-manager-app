@@ -15,6 +15,7 @@ sealed class Change {
     // turn: rotate/flip of the upright photo ([quarter turns clockwise, mirrored 0/1], see Turn), before the crop
     data class Edit(val adjustments: Map<String, Int>, val crop: List<Double>? = null, val turn: List<Int>? = null) : Change()
     object Delete : Change()                                         // to the Trash / OneDrive's recycle bin
+    data class Move(val folderId: String, val folderName: String) : Change()  // to another OneDrive folder
 
     /** Keywords, labels and flags: done to the photo's XMP/IPTC by [applyTags]. */
     val isTag get() = this is Keywords || this is Label || this is Flag || this is ClearLabels

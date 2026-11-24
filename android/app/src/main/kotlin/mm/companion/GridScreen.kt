@@ -136,7 +136,7 @@ private fun TopBar(model: AppModel) {
                             if (favs > 0 && i == favs) HorizontalDivider(Modifier.padding(vertical = 4.dp))
                             val fav = model.isFavorite(f)
                             DropdownMenuItem(
-                                text = { Text("${f.name}  (${"%,d".format(f.count)})") },
+                                text = { Text("${f.name}  (${"%,d".format(f.count)})", modifier = Modifier.padding(start = (f.depth * 14).dp)) },
                                 onClick = { open = false; model.open(f) },
                                 trailingIcon = if (f.inCloud) null else { {
                                     Text(if (fav) "★" else "☆", fontSize = 22.sp, color = if (fav) Color(0xFFE8C020) else Dim,
@@ -216,6 +216,7 @@ private fun BottomBar(model: AppModel) {
         for ((icon, label) in listOf("🏷" to "Label", "#" to "Keywords", "📅" to "Date", "✏️" to "Rename")) {
             BarButton(icon, label) { model.screen = Screen.Details }
         }
+        if (model.inCloud) BarButton("📁", "Move") { model.moving = MoveRequest(model.selection) }
         BarButton("🗑", "Delete") { model.delete() }  // Android asks "Move to Trash?" itself
     }
 }

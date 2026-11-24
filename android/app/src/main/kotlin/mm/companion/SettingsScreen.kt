@@ -71,6 +71,7 @@ private fun kind(c: Change) = when (c) {
     is Change.Rename -> "rename"
     is Change.Edit -> "edit"
     Change.Delete -> "delete"
+    is Change.Move -> "move"
 }
 
 /** "5 keyword changes", or "Keywords, date taken, rename". */

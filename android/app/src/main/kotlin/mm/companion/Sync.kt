@@ -119,10 +119,11 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     when (val c = e.change) {
                         is Change.Rename -> { drive.rename(found.id, c.name); i++ }
                         Change.Delete -> { drive.delete(found.id); ids.edit().remove(photoId.toString()).apply(); i++ }
+                        is Change.Move -> { drive.move(found.id, c.folderId); i++ }
                         else -> {
                             // a run of tag / date / edit changes: one download, one upload
                             var j = i
-                            while (j < entries.size && entries[j].change.let { it !is Change.Rename && it != Change.Delete }) j++
+                            while (j < entries.size && entries[j].change.let { it !is Change.Rename && it != Change.Delete && it !is Change.Move }) j++
                             val run = entries.subList(i, j)
                             // OneDrive changed it while uploading (still processing a new upload, or the PC's
                             // OneDrive saving it): start again from its new version.

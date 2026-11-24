@@ -250,6 +250,24 @@ class OneDrive(private val context: Context) {
         throw IOException("Couldn't rename to $name")
     }
 
+    /** Into another folder (a name already there: OneDrive adds a number to it). */
+    fun move(id: String, folderId: String) {
+        val body = JSONObject().put("parentReference", JSONObject().put("id", folderId))
+            .put("@microsoft.graph.conflictBehavior", "rename").toString().toByteArray()
+        request("PATCH", "$GRAPH/me/drive/items/$id", body, "application/json")
+    }
+
+    /** A new folder inside this one; returns its id. */
+    fun newFolder(parentId: String, name: String): String {
+        val body = JSONObject().put("name", name).put("folder", JSONObject())
+            .put("@microsoft.graph.conflictBehavior", "rename").toString().toByteArray()
+        return JSONObject(String(request("POST", "$GRAPH/me/drive/items/$parentId/children", body, "application/json").second))
+            .getString("id")
+    }
+
+    /** OneDrive's Pictures folder. */
+    fun pictures(): Entry = entry(get("/me/drive/special/photos?select=id,name,folder,lastModifiedDateTime,cTag"))
+
     /** To OneDrive's recycle bin (it can be restored there). */
     fun delete(id: String) {
         try { request("DELETE", "$GRAPH/me/drive/items/$id", null, null) } catch (e: GraphError) { if (e.code != 404) throw e }

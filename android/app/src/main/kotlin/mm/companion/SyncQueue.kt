@@ -37,6 +37,7 @@ fun Change.toJson(): JSONObject = JSONObject().apply {
             c.turn?.let { put("turn", JSONArray(it)) }
         }
         Change.Delete -> put("type", "delete")
+        is Change.Move -> { put("type", "move"); put("folder", c.folderId); put("folderName", c.folderName) }
     }
 }
 
@@ -56,6 +57,7 @@ fun changeFromJson(o: JSONObject): Change = when (o.getString("type")) {
             o.optJSONArray("turn")?.let { arr -> (0 until arr.length()).map { arr.getInt(it) } })
     }
     "delete" -> Change.Delete
+    "move" -> Change.Move(o.getString("folder"), o.optString("folderName"))
     else -> throw IllegalArgumentException(o.toString())
 }
 

@@ -188,7 +188,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             list.exceptionOrNull()?.let { message = "OneDrive: ${it.message}" }
             folders = list.getOrDefault(emptyList())
             val keep = folder?.let { f -> folders.firstOrNull { it.id == f.id } }
-            open(keep ?: folders.firstOrNull { it.count > 0 } ?: folders.firstOrNull())
+            open(keep ?: folders.firstOrNull { it.name.equals("Camera Roll", true) } ?: folders.firstOrNull { it.count > 0 }
+                ?: folders.firstOrNull())
             return@launch
         }
         found = withContext(Dispatchers.IO) { store.folders() }
@@ -208,11 +209,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** OneDrive's list, with what's still waiting to be done there: renamed, and deleted ones gone. */
-    private fun withQueued(list: List<Photo>): List<Photo> {
+    private fun withQueued(list: List<Photo>, folderId: String = ""): List<Photo> {
         val waiting = queue.all().groupBy { it.photoId }
         return list.mapNotNull { p ->
             val es = waiting[p.id] ?: return@mapNotNull p
             if (es.any { it.change == Change.Delete }) return@mapNotNull null
+            // moved to another folder (not done in OneDrive yet): not here any more
+            (es.lastOrNull { it.change is Change.Move }?.change as Change.Move?)?.let {
+                if (CloudPhotos.CLOUD + it.folderId != folderId) return@mapNotNull null
+            }
             var q = p
             (es.lastOrNull { it.change is Change.Rename }?.change as Change.Rename?)?.let { q = q.copy(name = it.name) }
             if (!cloud.isLocal(p)) {  // (a downloaded copy already has its new date)
@@ -243,7 +248,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val listed = runCatching { cloud.photos(f, online) }
             .recoverCatching { if (online) cloud.photos(f, false) else throw it }  // (as last seen)
         if (!quiet) listed.exceptionOrNull()?.let { withContext(Dispatchers.Main) { message = "OneDrive: ${it.message}" } }
-        withQueued(listed.getOrDefault(emptyList()))
+        withQueued(listed.getOrDefault(emptyList()), f.id)
     }
 
     fun open(f: Folder?) {
@@ -500,6 +505,38 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             if (gone.isNotEmpty()) afterTrash?.invoke()
             afterTrash = null
         }
+    }
+
+    /** The Move picker, while it's open. */
+    var moving by mutableStateOf<MoveRequest?>(null)
+
+    /** Move OneDrive photos into another Pictures folder: gone from this one now, moved in OneDrive by the sync. */
+    fun move(targets: List<Photo>, to: Folder, then: (() -> Unit)? = null) {
+        val moving = targets.filter { it.inCloud }
+        if (moving.isEmpty() || to.id == folder?.id) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                moving.forEach { record(it, Change.Move(to.id.removePrefix(CloudPhotos.CLOUD), to.name)) }
+            }
+            val gone = moving.map { it.id }.toSet()
+            photos = photos.filterNot { it.id in gone }
+            gone.forEach { selected.remove(it) }
+            message = "Moved ${moving.size} to ${to.name}" + if (cloud.online()) "" else " (in OneDrive once online)"
+            refreshPending()
+            Sync.schedule(app())
+            then?.invoke()
+        }
+    }
+
+    /** A new folder in OneDrive (needs a connection now); the folder list is read again. Returns it, or null. */
+    suspend fun newFolder(parent: Folder, name: String): Folder? {
+        if (!cloud.online()) { message = "A new folder needs a connection: ${cloud.whyOffline()}"; return null }
+        val made = withContext(Dispatchers.IO) { runCatching { cloud.newFolder(parent, name.trim()) } }
+        val id = made.getOrElse { message = "Couldn't make the folder: ${it.message}"; return null }
+        val list = withContext(Dispatchers.IO) { runCatching { cloud.folders(true) }.getOrNull() }
+        if (list != null) folders = list
+        return folders.firstOrNull { it.id == CloudPhotos.CLOUD + id }
+            ?: Folder(CloudPhotos.CLOUD + id, name.trim(), 0, "${parent.path}/${name.trim()}", parent.depth + 1)
     }
 
     /** Forget every change still waiting for OneDrive (the phone's photos keep them). */

@@ -39,7 +39,7 @@ data class Photo(
     val canChange get() = isJpeg || isPng
 }
 
-data class Folder(val id: String, val name: String, val count: Int, val path: String = "") {
+data class Folder(val id: String, val name: String, val count: Int, val path: String = "", val depth: Int = 0) {
     val inCloud get() = id.startsWith(CloudPhotos.CLOUD)
 }
 

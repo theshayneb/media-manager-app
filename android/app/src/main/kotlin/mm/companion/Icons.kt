@@ -29,6 +29,7 @@ object Line {
     val FullScreen = icon("full", "M4 9V4h5", "M20 9V4h-5", "M4 15v5h5", "M20 15v5h-5")
     val ExitFullScreen = icon("exitfull", "M9 4v5H4", "M15 4v5h5", "M9 20v-5H4", "M15 20v-5h5")
     val Delete = icon("delete", "M4 7h16", "M10 11v6", "M14 11v6", "M6 7l1 13h10l1-13", "M9 7V4h6v3")
+    val Folder = icon("folder", "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z")
     val Check = icon("check", "M5 12l5 5 9-10")
 }
 
