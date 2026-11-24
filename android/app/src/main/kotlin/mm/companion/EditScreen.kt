@@ -388,7 +388,11 @@ private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, hol
             var last = startPos
             val startOffset = offset
             while (true) {
-                val event = awaitPointerEvent()
+                // A finger kept still sends no events: after ¼ s with none, it's a hold (the original is shown).
+                val wait = 250 - (System.currentTimeMillis() - startTime)
+                val canHold = !cropping && !onLine && !moved && !held && !pinched
+                val event = if (canHold && wait > 0) withTimeoutOrNull(wait) { awaitPointerEvent() } else awaitPointerEvent()
+                if (event == null) { held = true; onHold(true); continue }
                 val pressed = event.changes.filter { it.pressed }
                 if (pressed.isEmpty()) break
                 if (event.changes.size >= 2) {  // pinch
@@ -419,7 +423,7 @@ private fun PhotoView(after: ImageBitmap, before: ImageBitmap, split: Float, hol
                     }
                     onLine -> onSplit(((pos.x - rect.left) / rect.width).coerceIn(0f, 1f))
                     moved && scale > 1f -> offset += pos - pressed[0].previousPosition
-                    !moved && !held && System.currentTimeMillis() - startTime > 250 -> { held = true; onHold(true) }
+                    !cropping && !moved && !held && System.currentTimeMillis() - startTime > 250 -> { held = true; onHold(true) }
                 }
                 pressed[0].consume()
             }
