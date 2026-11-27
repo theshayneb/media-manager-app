@@ -154,12 +154,14 @@ class OneDrive(private val context: Context) {
     // ---------------------------------------------------------------- browsing Camera Roll
     /** A file or folder in OneDrive, as listed. */
     data class Entry(val id: String, val name: String, val folder: Boolean, val childCount: Int, val mime: String,
-                     val taken: String?, val modified: String, val tag: String)
+                     val taken: String?, val modified: String, val tag: String,
+                     val duration: Long = 0, val created: String = "")
 
     private fun entry(o: JSONObject) = Entry(o.getString("id"), o.getString("name"), o.has("folder"),
         o.optJSONObject("folder")?.optInt("childCount") ?: 0, o.optJSONObject("file")?.optString("mimeType") ?: "",
         o.optJSONObject("photo")?.optString("takenDateTime")?.takeIf { it.isNotEmpty() },
-        o.optString("lastModifiedDateTime"), o.optString("cTag", o.optString("eTag")))
+        o.optString("lastModifiedDateTime"), o.optString("cTag", o.optString("eTag")),
+        o.optJSONObject("video")?.optLong("duration") ?: 0L, o.optJSONObject("fileSystemInfo")?.optString("createdDateTime") ?: "")
 
     /** Camera Roll itself (its id and name). */
     fun cameraRoll(): Entry = entry(get("/me/drive/special/cameraroll?select=id,name,folder,lastModifiedDateTime,cTag"))
@@ -167,7 +169,7 @@ class OneDrive(private val context: Context) {
     /** Everything in a folder (all pages). */
     fun children(id: String): List<Entry> {
         val out = mutableListOf<Entry>()
-        var url: String? = "$GRAPH/me/drive/items/$id/children?\$top=200&\$select=id,name,folder,file,photo,lastModifiedDateTime,cTag,eTag"
+        var url: String? = "$GRAPH/me/drive/items/$id/children?\$top=200&\$select=id,name,folder,file,photo,video,fileSystemInfo,lastModifiedDateTime,cTag,eTag"
         while (url != null) {
             val o = JSONObject(String(request("GET", url, null, null).second))
             val arr = o.getJSONArray("value")
@@ -204,6 +206,9 @@ class OneDrive(private val context: Context) {
             conn.disconnect()  // (if the range was ignored: stop the rest)
         }
     }
+
+    /** A short-lived link a video player can stream the file from. */
+    fun streamUrl(id: String): String = get("/me/drive/items/$id").getString("@microsoft.graph.downloadUrl")
 
     // ---------------------------------------------------------------- changing it
     fun download(id: String): ByteArray = request("GET", "$GRAPH/me/drive/items/$id/content", null, null).second

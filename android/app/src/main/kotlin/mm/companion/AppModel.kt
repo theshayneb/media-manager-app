@@ -25,7 +25,7 @@ import mm.core.renamePlan
 import java.io.File
 import java.time.LocalDateTime
 
-enum class Screen { Grid, Details, Edit, Settings, Compare }
+enum class Screen { Grid, Details, Edit, Settings, Compare, Video }
 
 const val STEAM_REQUEST = "Documents/Phone/Media Manager/steam-request.json"
 const val STEAM_RESULT = "Documents/Phone/Media Manager/steam-result.json"
@@ -267,6 +267,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             if (screen == Screen.Edit && e != null) {
                 photos.firstOrNull { it.id == e.id }?.let { editing = it; if (editTab == 3) selected[it.id] = true }
             }
+            val v = playing  // a video that was just renamed: the same video, its new name
+            if (screen == Screen.Video && v != null) photos.firstOrNull { it.id == v.id }?.let { playing = it }
         }
     }
 
@@ -361,6 +363,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) {
                 for (p in targets) {
                     try {
+                        if (p.isVideo) { problems.add("${p.name}: videos are tagged on the PC"); continue }
                         if (change.isTag && !p.canChange) { problems.add("${p.name}: only JPG and PNG photos can be tagged"); continue }
                         val taken = store.dateTaken(p)?.format(EXIF_DATE) ?: ""
                         if (!local(p)) {
@@ -391,7 +394,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     /** Date taken from each photo's file name (the Windows app's "From filename: Auto"). */
     fun datesFromNames(targets: List<Photo> = selection) {
         val templates = shared.templates
-        val found = targets.mapNotNull { p -> matchAny(templates, p.name)?.let { p to it.second } }
+        val found = targets.filterNot { it.isVideo }.mapNotNull { p -> matchAny(templates, p.name)?.let { p to it.second } }
         if (found.isEmpty()) { message = "No date found in those file names"; return }
         busy = true
         viewModelScope.launch {
@@ -412,7 +415,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun renamePreview(targets: List<Photo> = selection): List<Pair<Photo, String?>> {
         val items = targets.map { Triple(it.name, store.dateTaken(it), "") }
-        val others = photos.filter { selected[it.id] != true }.map { it.name }.toSet()
+        val others = photos.filter { p -> selected[p.id] != true && targets.none { it.id == p.id } }.map { it.name }.toSet()
         return targets.zip(renamePlan(items, shared.renamePattern, others))
     }
 
@@ -448,7 +451,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     /** The photo delta places on in the folder (that can be edited), or null at either end. */
     fun neighbour(p: Photo, delta: Int): Photo? {
-        val list = photos.filter { it.canChange }
+        val list = photos.filter { it.canChange || it.isVideo }
         val i = list.indexOfFirst { it.id == p.id }
         return if (i < 0) null else list.getOrNull(i + delta)
     }
@@ -518,8 +521,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var compareActive by mutableStateOf(0L)
 
     fun startCompare() {
-        val sel = selection
-        if (sel.size < 2) return
+        val sel = selection.filterNot { it.isVideo }  // (photos only)
+        if (sel.size < 2) { message = "Compare is for photos: select 2 to 4"; return }
         comparing = sel.take(MAX_COMPARE)
         compareActive = comparing[0].id
         if (sel.size > MAX_COMPARE) message = "Comparing the first $MAX_COMPARE of ${sel.size} selected photos"
@@ -533,6 +536,25 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (screen == Screen.Compare) screen = Screen.Grid
         selected.clear()
         ids.filter { id -> photos.any { it.id == id } }.forEach { selected[it] = true }
+    }
+
+    // ---------------------------------------------------------------- videos
+    var playing by mutableStateOf<Photo?>(null)
+
+    /** Open a photo in Edit, or play a video (swiping goes from one to the other). */
+    fun openItem(p: Photo) {
+        if (p.isVideo) { editing = null; playing = p; screen = Screen.Video }
+        else { playing = null; editing = p; screen = Screen.Edit }
+    }
+
+    /** Where the player gets the video: the phone's file, or a link to stream it from OneDrive (null: can't now). */
+    suspend fun videoSource(p: Photo): android.net.Uri? {
+        if (!p.inCloud) return p.uri
+        if (!cloud.online()) { message = "Playing needs a connection: ${cloud.whyOffline()}"; return null }
+        return withContext(Dispatchers.IO) {
+            runCatching { android.net.Uri.parse(drive.streamUrl(p.cloudId!!)) }
+                .onFailure { withContext(Dispatchers.Main) { message = "Couldn't play it: ${it.message}" } }.getOrNull()
+        }
     }
 
     /** The Move picker, while it's open. */

@@ -30,9 +30,12 @@ data class Photo(
     val modified: Long,
     val mime: String,
     val cloudId: String? = null,
+    val durationMs: Long = 0,
 ) {
     val inCloud get() = cloudId != null
-    val uri: Uri get() = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+    val isVideo get() = mime.startsWith("video/")
+    val uri: Uri get() = ContentUris.withAppendedId(
+        if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
     val isJpeg get() = mime == "image/jpeg" || name.lowercase().let { it.endsWith(".jpg") || it.endsWith(".jpeg") }
     val isPng get() = mime == "image/png" || name.lowercase().endsWith(".png")
     /** Tags, dates and edits work on JPGs and PNGs (screenshots). */
@@ -43,6 +46,9 @@ data class Folder(val id: String, val name: String, val count: Int, val path: St
     val inCloud get() = id.startsWith(CloudPhotos.CLOUD)
 }
 
+/** Photos, then videos (Android keeps them in separate lists). */
+private val TABLES = listOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+
 val EXIF_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
 
 /** Photos on the device: listing, reading their tags, and changing the files. */
@@ -52,11 +58,11 @@ class PhotoStore(private val context: Context) {
     fun folders(): List<Folder> {
         data class Count(val name: String, val path: String, var n: Int)
         val counts = linkedMapOf<String, Count>()
-        resolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            arrayOf(MediaStore.Images.Media.BUCKET_ID, MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
-                MediaStore.Images.Media.DATA),
-            null, null, "${MediaStore.Images.Media.DATE_TAKEN} DESC",
+        for (table in TABLES) resolver.query(
+            table,
+            arrayOf(MediaStore.MediaColumns.BUCKET_ID, MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
+                MediaStore.MediaColumns.DATA),
+            null, null, "${MediaStore.MediaColumns.DATE_TAKEN} DESC",
         )?.use { c ->
             while (c.moveToNext()) {
                 val id = c.getString(0) ?: continue
@@ -71,24 +77,28 @@ class PhotoStore(private val context: Context) {
     fun emptyFolder(path: String) =
         Folder(path.lowercase(java.util.Locale.ROOT).hashCode().toString(), File(path).name, 0, path)
 
+    /** A folder's photos and videos, newest first. */
     fun photos(folderId: String): List<Photo> {
         val out = mutableListOf<Photo>()
-        resolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            arrayOf(
-                MediaStore.Images.Media._ID, MediaStore.Images.Media.DATA, MediaStore.Images.Media.DISPLAY_NAME,
-                MediaStore.Images.Media.DATE_TAKEN, MediaStore.Images.Media.DATE_MODIFIED,
-                MediaStore.Images.Media.MIME_TYPE,
-            ),
-            "${MediaStore.Images.Media.BUCKET_ID} = ?", arrayOf(folderId),
-            "${MediaStore.Images.Media.DATE_TAKEN} DESC",
-        )?.use { c ->
-            while (c.moveToNext()) {
-                out.add(Photo(c.getLong(0), c.getString(1) ?: continue, c.getString(2) ?: "", c.getLong(3),
-                    c.getLong(4), c.getString(5) ?: ""))
+        for (table in TABLES) {
+            val video = table == MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            resolver.query(
+                table,
+                arrayOf(
+                    MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.DISPLAY_NAME,
+                    MediaStore.MediaColumns.DATE_TAKEN, MediaStore.MediaColumns.DATE_MODIFIED,
+                    MediaStore.MediaColumns.MIME_TYPE, MediaStore.MediaColumns.DURATION,
+                ),
+                "${MediaStore.MediaColumns.BUCKET_ID} = ?", arrayOf(folderId), null,
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val mime = c.getString(5) ?: if (video) "video/mp4" else ""
+                    out.add(Photo(c.getLong(0), c.getString(1) ?: continue, c.getString(2) ?: "", c.getLong(3),
+                        c.getLong(4), mime, durationMs = if (video) c.getLong(6) else 0L))
+                }
             }
         }
-        return out
+        return out.sortedByDescending { if (it.takenMillis > 0) it.takenMillis else it.modified * 1000 }
     }
 
     fun thumbnail(photo: Photo, size: Int = 256): Bitmap? =
@@ -133,6 +143,11 @@ class PhotoStore(private val context: Context) {
     }
 
     fun dateTaken(photo: Photo): LocalDateTime? {
+        if (photo.isVideo) {  // a video: the date Android (or OneDrive) has for it; its file isn't read
+            return photo.takenMillis.takeIf { it > 0 }?.let {
+                LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(it), java.time.ZoneId.systemDefault())
+            }
+        }
         val exif = try { ExifInterface(photo.path) } catch (e: Exception) { null }
         val text = exif?.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
             ?: exif?.getAttribute(ExifInterface.TAG_DATETIME_DIGITIZED)

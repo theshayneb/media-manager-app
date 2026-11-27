@@ -121,9 +121,10 @@ private fun TopBar(model: AppModel) {
                         Text("${model.folder?.name?.removePrefix("Camera Roll › ") ?: "No photos"} ▾", color = Color.White,
                             fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Row {
-                            val n = model.photos.size
-                            Text("${if (model.inCloud) "OneDrive" else "Phone"}, ${"%,d".format(n)} photo${if (n == 1) "" else "s"}",
-                                color = Dim, fontSize = 12.5.sp)
+                            val v = model.photos.count { it.isVideo }
+                            val n = model.photos.size - v
+                            Text("${if (model.inCloud) "OneDrive" else "Phone"}, ${"%,d".format(n)} photo${if (n == 1) "" else "s"}" +
+                                if (v > 0) ", ${"%,d".format(v)} video${if (v == 1) "" else "s"}" else "", color = Dim, fontSize = 12.5.sp)
                             if (model.pending > 0) Text(", ${model.pending} change${if (model.pending == 1) "" else "s"} to sync",
                                 color = Waiting, fontSize = 12.5.sp)
                         }
@@ -177,7 +178,7 @@ private fun Tile(model: AppModel, p: Photo) {
         .combinedClickable(
             onClick = {
                 if (model.selected.isNotEmpty()) { if (sel) model.selected.remove(p.id) else model.selected[p.id] = true }
-                else if (p.canChange) { model.editing = p; model.screen = Screen.Edit }
+                else if (p.canChange || p.isVideo) model.openItem(p)  // a video: plays
                 else model.selected[p.id] = true
             },
             onLongClick = { model.selected[p.id] = true },
@@ -201,6 +202,12 @@ private fun Tile(model: AppModel, p: Photo) {
         if (p.id in model.waitingIds && !sel) {  // a change not in OneDrive yet
             Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(11.dp).clip(CircleShape).background(Color(0x73000000))
                 .padding(1.5.dp).clip(CircleShape).background(Waiting))
+        }
+        if (p.isVideo) {  // ▶ and its length
+            val s = (p.durationMs / 1000).toInt()
+            Text("▶ " + (if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)),
+                fontSize = 10.sp, color = Color.White, modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
+                    .clip(RoundedCornerShape(9.dp)).background(Color(0x8C000000)).padding(horizontal = 6.dp, vertical = 1.dp))
         }
         if (sel) {
             Box(Modifier.fillMaxSize().border(3.dp, Accent))

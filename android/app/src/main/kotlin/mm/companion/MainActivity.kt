@@ -122,6 +122,7 @@ fun App(model: AppModel) {
         Screen.Edit -> model.editing?.let { key(it.id) { EditScreen(model, it) } } ?: run { model.screen = Screen.Grid }
         Screen.Settings -> SettingsScreen(model)
         Screen.Compare -> CompareScreen(model)
+        Screen.Video -> model.playing?.let { key(it.id) { VideoScreen(model, it) } } ?: run { model.screen = Screen.Grid }
     }
 }
 

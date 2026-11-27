@@ -159,13 +159,13 @@ fun EditScreen(model: AppModel, photo: Photo) {
             model.loadFields(photo)
         }
     }
-    fun moveOn() { pending?.let { model.editing = it } ?: leave(); pending = null }  // next photo, or the grid
+    fun moveOn() { pending?.let { model.openItem(it) } ?: leave(); pending = null }  // next photo, or the grid
     /** Swipe: the next (1) or previous (-1) photo in the folder, asking first if this one was changed. */
     fun go(delta: Int) {
         val target = model.neighbour(photo, delta) ?: run {
             model.message = if (delta > 0) "That's the last photo" else "That's the first photo"; return
         }
-        if (changed()) { pending = target; asking = true } else model.editing = target
+        if (changed()) { pending = target; asking = true } else model.openItem(target)
     }
     BackHandler { if (full) full = false else if (cropping) cropping = false else if (changed()) asking = true else leave() }
     if (asking) AlertDialog(onDismissRequest = { asking = false; pending = null }, title = { Text("Save the edit?") },
@@ -198,12 +198,12 @@ fun EditScreen(model: AppModel, photo: Photo) {
                 Tool(if (full) Line.ExitFullScreen else Line.FullScreen, if (full) "Show the sliders" else "Full screen") { full = !full }
                 if (photo.inCloud) Tool(Line.Folder, "Move") {  // to another Pictures folder; then the next photo
                     val next = model.neighbour(photo, 1) ?: model.neighbour(photo, -1)
-                    model.moving = MoveRequest(listOf(photo)) { if (next != null) model.editing = next else leave() }
+                    model.moving = MoveRequest(listOf(photo)) { if (next != null) model.openItem(next) else leave() }
                 }
                 // Delete: then the next photo (or the one before), else the grid.
                 Tool(Line.Delete, "Delete") {
                     val next = model.neighbour(photo, 1) ?: model.neighbour(photo, -1)
-                    model.delete(listOf(photo)) { if (next != null) model.editing = next else leave() }
+                    model.delete(listOf(photo)) { if (next != null) model.openItem(next) else leave() }
                 }
             }
             Spacer(Modifier.weight(1f))

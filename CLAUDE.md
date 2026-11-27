@@ -69,7 +69,9 @@ Windows 11 desktop app, Python 3.12 + PySide6. Combines two existing apps plus a
   cached copy and queues the change by item id (`onedrive-items`); only Camera Roll is browsed/edited (the user's choice); 📁 Move (selection bar + Edit,
   `MoveDialog.kt`, + New folder) only INTO Pictures › 2026 / 2027 and their folders (`CloudPhotos.MOVE_TO`; their folder
   names read when ▸ opened, `OneDrive.subfolders`; nothing in them listed or downloaded) = Change.Move, done by the sync (`OneDrive.move`); Settings › Wi-Fi only (Sync: UNMETERED). ⧉ Compare (2–4 selected, `CompareScreen.kt`: sideways, `bestLayout`, one shared zoom,
-  the bar acts on the active photo). Look (user's approved redesign mock-up): album week headers (`core` AlbumWeek.kt = the PC's
+  the bar acts on the active photo). Videos (phone: MediaStore Images + Video tables, `PhotoStore.TABLES`; OneDrive: video/
+  mimes, streamed via `OneDrive.streamUrl`): ▶ length on tiles, `VideoScreen.kt` (VideoView, timeline, ±10 s, Rename/
+  Move/Delete, swipe = `openItem` across photos and videos); tags/dates aren't written into videos on the phone. Look (user's approved redesign mock-up): album week headers (`core` AlbumWeek.kt = the PC's
   album_week), Phone/OneDrive switch, yellow dot = change waiting, label strip, line icons (`Icons.kt`), Tags panel
   keyword chips filled = all selected have it / outlined = some (tap: onto all, or off all), Settings: sync first, one row per photo. `media_manager/companion.py` writes OneDrive\Documents\Phone\Media Manager\companion.json.
   `media_manager/phone_steam.py`: the phone's Steam "Import now" (steam-request.json → the PC runs Photos' Steam import

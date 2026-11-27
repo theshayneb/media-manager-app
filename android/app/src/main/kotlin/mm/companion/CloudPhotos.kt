@@ -102,11 +102,13 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
         val saved = File(dir, "list-$id.json")
         val entries: JSONArray = if (online) {
             val a = JSONArray()
-            drive.children(id).filter { !it.folder && it.mime.startsWith("image/") }.forEach { e ->
-                // OneDrive hasn't read a date taken from it (yet; e.g. just changed): read it from the file.
-                val taken = e.taken ?: runCatching { exifDate(drive.head(e.id, 128 * 1024))?.toString() }.getOrNull()
+            drive.children(id).filter { !it.folder && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }.forEach { e ->
+                val video = e.mime.startsWith("video/")
+                // OneDrive hasn't read a date taken from a photo (yet; e.g. just changed): read it from the file.
+                // (A video: when it was made, from OneDrive; its file isn't read.)
+                val taken = e.taken ?: if (video) null else runCatching { exifDate(drive.head(e.id, 128 * 1024))?.toString() }.getOrNull()
                 a.put(JSONObject().put("id", e.id).put("name", e.name).put("mime", e.mime).put("taken", taken ?: "")
-                    .put("modified", e.modified).put("tag", e.tag))
+                    .put("modified", e.modified).put("tag", e.tag).put("duration", e.duration).put("created", e.created))
             }
             saved.writeText(a.toString())
             a
@@ -122,9 +124,11 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
             // The phone's copy's own date first (changed here, maybe not in OneDrive yet), then OneDrive's.
             val taken = (if (copy.exists()) runCatching { exifDate(copy.readBytes(128 * 1024)) }.getOrNull() else null)
                 ?: wallTime(o.optString("taken"))
+            val created = runCatching { Instant.parse(o.optString("created")).toEpochMilli() }.getOrDefault(0L)
+            val video = o.getString("mime").startsWith("video/")
             Photo(cloudPhotoId(item), copy.path, name,
-                taken?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: 0L,
-                modified, o.getString("mime"), cloudId = item)
+                taken?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: (if (video) created else 0L),
+                modified, o.getString("mime"), cloudId = item, durationMs = o.optLong("duration"))
         }.sortedByDescending { if (it.takenMillis > 0) it.takenMillis else it.modified * 1000 }
     }
 
@@ -167,7 +171,7 @@ class CloudPhotos(private val context: Context, private val drive: OneDrive) {
 
     fun thumbnail(p: Photo, online: Boolean): Bitmap? {
         val f = File(p.path)
-        if (f.exists()) return runCatching { decodePreview(f.readBytes(), 320) }.getOrNull()  // changed here: as it is now
+        if (f.exists() && !p.isVideo) return runCatching { decodePreview(f.readBytes(), 320) }.getOrNull()  // changed here: as it is now
         val t = thumbFile(p)
         if (!t.exists()) {
             if (!online) return null
