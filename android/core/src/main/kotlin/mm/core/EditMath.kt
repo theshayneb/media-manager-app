@@ -72,6 +72,9 @@ fun shadowCurve(x: Double, amount: Double): Double {
     return x * (1 + amount / LIFT * weight)
 }
 
+/** Highlights: the mirror of Shadows (photo_edit.highlight_curve); mid-tones and darks stay. */
+fun highlightCurve(x: Double, amount: Double) = 1 - shadowCurve(1 - x, -amount)
+
 /** 3 × 256 curves (red, green, blue). */
 fun lookupTable(a: Adjustments): Array<IntArray> {
     val gains = channelGains(a.yellow / 100.0, a.red / 100.0)
@@ -84,7 +87,7 @@ fun lookupTable(a: Adjustments): Array<IntArray> {
             var x = min(1.0, v / 255.0 * gains[ch])
             if (a.brightness != 0) x = x.pow(2.0.pow(-BRIGHTNESS * a.brightness / 100.0))
             x = shadowCurve(x, shadows)
-            x += highlights * x.pow(2) * (1 - x.pow(6))
+            x = highlightCurve(x, highlights)
             x = (x - 0.5) * contrast + 0.5
             (x * 255).roundToInt().coerceIn(0, 255)
         }
@@ -315,10 +318,12 @@ fun auto(p: Pixels): Map<String, Int> {
     var shape = LIFT * shadowBump(x)
     out["shadows"] = if (x < 0.18 && shape > 0.01) max(0, slider((0.18 - x) / shape)) else 0
     x = percentile(hist, 0.90) / 255.0
-    shape = LIFT * x.pow(2) * (1 - x.pow(6))
+    val darker = LIFT * shadowBump(1 - x)  // how far -100 takes it down (as photo_edit.auto)
+    val y = 1 - x
+    val brighter = y * (if (y < SHADOW_REACH) (1 - y / SHADOW_REACH).pow(2) else 0.0)
     out["highlights"] = when {
-        x > 0.86 && shape > 0.01 -> min(0, slider((0.82 - x) / shape))
-        x < 0.62 && shape > 0.01 && spread >= 30 -> slider((0.70 - x) / shape).coerceIn(0, 40)
+        x > 0.86 && darker > 0.01 -> min(0, slider((0.82 - x) / darker))
+        x < 0.62 && brighter > 0.01 && spread >= 30 -> slider((0.70 - x) / brighter).coerceIn(0, 40)
         else -> 0
     }
     // Detail, gently: a soft photo gets more sharpening; a flat one a little more clarity.

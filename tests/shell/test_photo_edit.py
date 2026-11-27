@@ -44,6 +44,12 @@ def test_each_slider_goes_the_right_way():
     for amount in (-100, 100):  # the curve never turns back on itself
         table = lookup_table(Adjustments(shadows=amount))[:256]
         assert table == sorted(table)
+        table = lookup_table(Adjustments(highlights=amount))[:256]
+        assert table == sorted(table) and table[255] == 255 and table[0] == 0
+    assert abs(apply(mid, Adjustments(highlights=-100)).getpixel((0, 0))[0] - 128) <= 4  # mid-grey stays
+    assert abs(apply(mid, Adjustments(highlights=100)).getpixel((0, 0))[0] - 128) <= 4
+    assert apply(light, Adjustments(highlights=60)).getpixel((0, 0))[0] > 215  # brights brighter
+    assert apply(dark, Adjustments(highlights=-100)).getpixel((0, 0))[0] == 40  # darks don't move
 
 
 def test_which_files():

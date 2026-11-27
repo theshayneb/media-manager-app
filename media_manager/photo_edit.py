@@ -145,7 +145,7 @@ def lookup_table(a: Adjustments) -> list[int]:
             if a.brightness:
                 x = x ** (2 ** (-BRIGHTNESS * a.brightness / 100))  # a curve: brighter/darker mid-tones
             x = shadow_curve(x, shadows)                       # the dark part only, not pure black
-            x += highlights * x ** 2 * (1 - x ** 6)            # the bright part, not pure white
+            x = highlight_curve(x, highlights)                 # the bright part only, not pure white
             x = (x - 0.5) * contrast + 0.5
             table.append(max(0, min(255, round(x * 255))))
     return table
@@ -163,6 +163,12 @@ def shadow_curve(x: float, amount: float) -> float:
         return x + amount * _shadow_bump(x)
     weight = (1 - x / SHADOW_REACH) ** 2 if x < SHADOW_REACH else 0.0
     return x * (1 + amount / LIFT * weight)
+
+
+def highlight_curve(x: float, amount: float) -> float:
+    """Highlights, the mirror of Shadows: darker (amount < 0) tames the bright tones; brighter lifts them, never
+    blowing them out to white. Mid-tones and darks stay as they are (before, ±100 moved mid-grey 44 levels)."""
+    return 1 - shadow_curve(1 - x, -amount)
 
 
 # ------------------------------------------------------------------ auto and white balance
@@ -242,11 +248,13 @@ def auto(image: Image.Image) -> dict[str, int]:
     out["shadows"] = max(0, out["shadows"])
 
     x = _percentile(hist, 0.90) / 255
-    shape = LIFT * x ** 2 * (1 - x ** 6)
-    if x > 0.86 and shape > 0.01:
-        out["highlights"] = min(0, _slider((0.82 - x) / shape))
-    elif x < 0.62 and shape > 0.01 and spread >= 30:
-        out["highlights"] = max(0, min(40, _slider((0.70 - x) / shape)))
+    darker = LIFT * _shadow_bump(1 - x)                                    # how far -100 takes it down
+    y = 1 - x
+    brighter = y * ((1 - y / SHADOW_REACH) ** 2 if y < SHADOW_REACH else 0.0)  # how far +100 takes it up
+    if x > 0.86 and darker > 0.01:
+        out["highlights"] = min(0, _slider((0.82 - x) / darker))
+    elif x < 0.62 and brighter > 0.01 and spread >= 30:
+        out["highlights"] = max(0, min(40, _slider((0.70 - x) / brighter)))
     else:
         out["highlights"] = 0
 

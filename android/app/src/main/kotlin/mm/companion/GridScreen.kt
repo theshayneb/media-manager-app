@@ -212,21 +212,22 @@ private fun Tile(model: AppModel, p: Photo) {
 
 @Composable
 private fun BottomBar(model: AppModel) {
+    // line icons, as on the photo's own screen
     Row(Modifier.fillMaxWidth().background(Panel).padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceAround) {
-        for ((icon, label) in listOf("🏷" to "Label", "#" to "Keywords", "📅" to "Date", "✏️" to "Rename")) {
+        for ((icon, label) in listOf(Line.Tag to "Label", Line.Hash to "Keywords", Line.Calendar to "Date", Line.Pencil to "Rename")) {
             BarButton(icon, label) { model.screen = Screen.Details }
         }
-        if (model.selected.size >= 2) BarButton("⧉", "Compare") { model.startCompare() }  // sideways, side by side
-        if (model.inCloud) BarButton("📁", "Move") { model.moving = MoveRequest(model.selection) }
-        BarButton("🗑", "Delete") { model.delete() }  // Android asks "Move to Trash?" itself
+        if (model.selected.size >= 2) BarButton(Line.Compare, "Compare") { model.startCompare() }  // sideways, side by side
+        if (model.inCloud) BarButton(Line.Folder, "Move") { model.moving = MoveRequest(model.selection) }
+        BarButton(Line.Delete, "Delete") { model.delete() }  // Android asks "Move to Trash?" itself
     }
 }
 
 @Composable
-private fun BarButton(icon: String, label: String, onClick: () -> Unit) {
-    Column(Modifier.clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 2.dp),
+private fun BarButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Column(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(icon, fontSize = 20.sp)
-        Text(label, fontSize = 11.sp, color = Color.White)
+        LineIcon(icon, label, modifier = Modifier.size(24.dp))
+        Text(label, fontSize = 11.sp, color = Color.White, modifier = Modifier.padding(top = 2.dp))
     }
 }

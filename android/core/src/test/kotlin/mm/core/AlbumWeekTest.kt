@@ -38,6 +38,10 @@ class ShadowsTest {
         assertEquals(listOf(0, 19, 79, 104, 122, 135, 221, 255), table(100))
         assertEquals(listOf(0, 0, 0, 6, 75, 134, 221, 255), table(-100))
         assertEquals(listOf(0, 0, 38, 61, 101, 135, 221, 255), table(40))
+        val at2 = intArrayOf(0, 10, 30, 46, 90, 128, 200, 230, 255)
+        fun high(h: Int) = lookupTable(Adjustments(highlights = h, contrast = 20, brightness = 10))[0].let { t -> at2.map { t[it] } }
+        assertEquals(listOf(0, 0, 11, 32, 87, 137, 246, 255, 255), high(100))
+        assertEquals(listOf(0, 0, 11, 32, 87, 127, 149, 199, 255), high(-100))
         val mid = lookupTable(Adjustments(shadows = 100))[0][128]
         kotlin.test.assertTrue(mid - 128 <= 4, "mid-grey moved to $mid")
     }

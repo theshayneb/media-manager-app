@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.13
+
+- Edit: Highlights only changes the bright tones now, as Shadows does since 0.7.12 (before, ±100 moved mid-grey
+  by 44 of 255 levels). Brighter never blows the brights out to white. Auto's Highlights uses the new curve.
+  (The Android app edits the same way.)
+
 ## 0.7.12
 
 - Edit: Shadows only changes the dark tones now. Before, +100 also lifted mid-grey by 44 of 255 levels (and even

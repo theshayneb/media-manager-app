@@ -31,6 +31,10 @@ object Line {
     val Delete = icon("delete", "M4 7h16", "M10 11v6", "M14 11v6", "M6 7l1 13h10l1-13", "M9 7V4h6v3")
     val Folder = icon("folder", "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z")
     val Pencil = icon("pencil", "M4 20h4L19 9l-4-4L4 16z")
+    val Tag = icon("tag", "M3 12V4h8l9 9-8 8z", "M8.5 7.5a1 1 0 1 0 -0.01 0")
+    val Hash = icon("hash", "M9 4L7 20", "M17 4l-2 16", "M4 9h16", "M3 15h16")
+    val Calendar = icon("calendar", "M4 6h16v14H4z", "M4 10h16", "M8 3v5", "M16 3v5")
+    val Compare = icon("compare", "M3 6h8v12H3z", "M13 6h8v12h-8z")
     val Check = icon("check", "M5 12l5 5 9-10")
 }
 
